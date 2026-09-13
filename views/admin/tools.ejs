@@ -1,0 +1,83 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/admin-nav', { user, active }) %>
+
+<section class="section">
+  <h1>工具管理</h1>
+
+  <div class="detail-grid">
+    <% if (user.role === 'admin') { %>
+      <div class="card">
+        <h3><%= editTool ? '編輯工具' : '新增工具' %></h3>
+        <form method="POST" action="<%= editTool ? '/admin/tools/' + editTool.id : '/admin/tools' %>" class="form">
+          <div class="form-row">
+            <label>工具名稱</label>
+            <input type="text" name="name" value="<%= editTool ? editTool.name : '' %>" required>
+          </div>
+          <div class="form-row">
+            <label>編號</label>
+            <input type="text" name="code" value="<%= editTool ? editTool.code : '' %>" placeholder="例如 TL-007" required>
+          </div>
+          <div class="form-row">
+            <label>分類</label>
+            <input type="text" name="category" value="<%= editTool ? (editTool.category || '') : '' %>">
+          </div>
+          <div class="form-row">
+            <label>備註</label>
+            <textarea name="note" rows="2"><%= editTool ? (editTool.note || '') : '' %></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary"><%= editTool ? '儲存變更' : '新增工具' %></button>
+          <% if (editTool) { %><a class="btn btn-outline" href="/admin/tools">取消編輯</a><% } %>
+        </form>
+      </div>
+    <% } %>
+
+    <div class="card">
+      <h3>工具列表</h3>
+      <table class="table">
+        <thead><tr><th>編號</th><th>名稱</th><th>分類</th><th>狀態</th><th>持有人</th><th></th></tr></thead>
+        <tbody>
+          <% tools.forEach(function(t) { %>
+            <tr>
+              <td><%= t.code %></td>
+              <td><%= t.name %></td>
+              <td><%= t.category || '-' %></td>
+              <td><span class="badge tool-<%= t.status %>"><%= TOOL_STATUS_LABELS[t.status] %></span></td>
+              <td><%= t.holder_name || '-' %></td>
+              <td class="action-cell">
+                <% if (t.status === 'available') { %>
+                  <form method="POST" action="/admin/tools/<%= t.id %>/checkout" class="inline-form">
+                    <button type="submit" class="btn btn-small">借用</button>
+                  </form>
+                <% } %>
+                <% if (t.status === 'in_use' && (user.role === 'admin' || t.current_holder_id === user.id)) { %>
+                  <form method="POST" action="/admin/tools/<%= t.id %>/return" class="inline-form">
+                    <button type="submit" class="btn btn-small">歸還</button>
+                  </form>
+                <% } %>
+                <% if (user.role === 'admin') { %>
+                  <a class="btn btn-small" href="/admin/tools/<%= t.id %>/edit">編輯</a>
+                  <% if (t.status !== 'maintenance') { %>
+                    <form method="POST" action="/admin/tools/<%= t.id %>/maintenance" class="inline-form">
+                      <button type="submit" class="btn btn-small btn-warning">送修</button>
+                    </form>
+                  <% } else { %>
+                    <form method="POST" action="/admin/tools/<%= t.id %>/available" class="inline-form">
+                      <button type="submit" class="btn btn-small">修復可用</button>
+                    </form>
+                  <% } %>
+                  <% if (t.status !== 'retired') { %>
+                    <form method="POST" action="/admin/tools/<%= t.id %>/retire" class="inline-form" onsubmit="return confirm('確定要將此工具報廢嗎？');">
+                      <button type="submit" class="btn btn-small btn-danger">報廢</button>
+                    </form>
+                  <% } %>
+                <% } %>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<%- include('../partials/foot') %>

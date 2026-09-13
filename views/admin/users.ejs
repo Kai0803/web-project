@@ -1,0 +1,72 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/admin-nav', { user, active }) %>
+
+<section class="section">
+  <h1>人員管理</h1>
+
+  <% if (error) { %><div class="flash flash-error"><%= error %></div><% } %>
+
+  <div class="detail-grid">
+    <div class="card">
+      <h3>新增人員</h3>
+      <form method="POST" action="/admin/users" class="form">
+        <div class="form-row">
+          <label>姓名</label>
+          <input type="text" name="name" required>
+        </div>
+        <div class="form-row">
+          <label>登入帳號</label>
+          <input type="text" name="username" required>
+        </div>
+        <div class="form-row">
+          <label>密碼</label>
+          <input type="password" name="password" required minlength="4">
+        </div>
+        <div class="form-row">
+          <label>角色</label>
+          <select name="role">
+            <option value="engineer">工程師</option>
+            <option value="admin">管理員</option>
+          </select>
+        </div>
+        <div class="form-row">
+          <label>電話</label>
+          <input type="text" name="phone">
+        </div>
+        <button type="submit" class="btn btn-primary">新增人員</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>人員列表</h3>
+      <table class="table">
+        <thead><tr><th>姓名</th><th>帳號</th><th>角色</th><th>電話</th><th>狀態</th><th></th></tr></thead>
+        <tbody>
+          <% users.forEach(function(u) { %>
+            <tr>
+              <td><%= u.name %></td>
+              <td><%= u.username %></td>
+              <td><%= u.role === 'admin' ? '管理員' : '工程師' %></td>
+              <td><%= u.phone || '-' %></td>
+              <td><%= u.active ? '啟用' : '停用' %></td>
+              <td class="action-cell">
+                <form method="POST" action="/admin/users/<%= u.id %>/toggle-active" class="inline-form">
+                  <button type="submit" class="btn btn-small <%= u.active ? 'btn-warning' : '' %>"><%= u.active ? '停用' : '啟用' %></button>
+                </form>
+                <details class="inline-details">
+                  <summary class="btn btn-small">重設密碼</summary>
+                  <form method="POST" action="/admin/users/<%= u.id %>/reset-password" class="inline-form">
+                    <input type="password" name="password" placeholder="新密碼" minlength="4" required>
+                    <button type="submit" class="btn btn-small">確認</button>
+                  </form>
+                </details>
+              </td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<%- include('../partials/foot') %>

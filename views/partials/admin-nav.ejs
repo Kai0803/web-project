@@ -1,0 +1,21 @@
+  <header class="topbar admin-topbar">
+    <div class="topbar-inner">
+      <a class="brand" href="/admin/dashboard">❄️ 內部管理系統</a>
+      <nav class="main-nav">
+        <a href="/admin/dashboard" class="<%= active === 'dashboard' ? 'active' : '' %>">儀表板</a>
+        <a href="/admin/orders" class="<%= active === 'orders' ? 'active' : '' %>">預約 / 工單</a>
+        <% if (user.role === 'admin') { %>
+          <a href="/admin/service-items" class="<%= active === 'service-items' ? 'active' : '' %>">服務項目（工項）</a>
+          <a href="/admin/parts" class="<%= active === 'parts' ? 'active' : '' %>">零件庫存</a>
+        <% } %>
+        <a href="/admin/tools" class="<%= active === 'tools' ? 'active' : '' %>">工具管理</a>
+        <% if (user.role === 'admin') { %>
+          <a href="/admin/users" class="<%= active === 'users' ? 'active' : '' %>">人員管理</a>
+        <% } %>
+      </nav>
+      <div class="topbar-user">
+        <span><%= user.name %>（<%= user.role === 'admin' ? '管理員' : '工程師' %>）</span>
+        <a href="/logout" class="btn btn-small">登出</a>
+      </div>
+    </div>
+  </header>

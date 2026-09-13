@@ -1,0 +1,75 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/admin-nav', { user, active }) %>
+
+<section class="section">
+  <h1>零件庫存管理</h1>
+
+  <div class="detail-grid">
+    <% if (user.role === 'admin') { %>
+      <div class="card">
+        <h3><%= editPart ? '編輯零件' : '新增零件' %></h3>
+        <form method="POST" action="<%= editPart ? '/admin/parts/' + editPart.id : '/admin/parts' %>" class="form">
+          <div class="form-row">
+            <label>名稱</label>
+            <input type="text" name="name" value="<%= editPart ? editPart.name : '' %>" required>
+          </div>
+          <div class="form-row">
+            <label>規格</label>
+            <input type="text" name="spec" value="<%= editPart ? (editPart.spec || '') : '' %>">
+          </div>
+          <div class="form-row">
+            <label>單位</label>
+            <input type="text" name="unit" value="<%= editPart ? editPart.unit : '個' %>">
+          </div>
+          <div class="form-row">
+            <label>庫存數量</label>
+            <input type="number" name="stock_qty" value="<%= editPart ? editPart.stock_qty : 0 %>" min="0">
+          </div>
+          <div class="form-row">
+            <label>單價</label>
+            <input type="number" name="unit_price" value="<%= editPart ? editPart.unit_price : 0 %>" min="0" step="1">
+          </div>
+          <div class="form-row">
+            <label>低庫存警戒值</label>
+            <input type="number" name="low_stock_threshold" value="<%= editPart ? editPart.low_stock_threshold : 5 %>" min="0">
+          </div>
+          <div class="form-row">
+            <label>備註</label>
+            <textarea name="note" rows="2"><%= editPart ? (editPart.note || '') : '' %></textarea>
+          </div>
+          <button type="submit" class="btn btn-primary"><%= editPart ? '儲存變更' : '新增零件' %></button>
+          <% if (editPart) { %><a class="btn btn-outline" href="/admin/parts">取消編輯</a><% } %>
+        </form>
+      </div>
+    <% } %>
+
+    <div class="card">
+      <h3>零件列表</h3>
+      <table class="table">
+        <thead><tr><th>名稱</th><th>規格</th><th>庫存</th><th>單價</th><% if (user.role === 'admin') { %><th></th><% } %></tr></thead>
+        <tbody>
+          <% parts.forEach(function(p) { %>
+            <tr class="<%= p.stock_qty <= p.low_stock_threshold ? 'row-warning' : '' %>">
+              <td><%= p.name %></td>
+              <td><%= p.spec || '-' %></td>
+              <td><%= p.stock_qty %> <%= p.unit %>
+                <% if (p.stock_qty <= p.low_stock_threshold) { %><span class="badge badge-pending">庫存偏低</span><% } %>
+              </td>
+              <td><%= formatMoney(p.unit_price) %></td>
+              <% if (user.role === 'admin') { %>
+                <td>
+                  <a class="btn btn-small" href="/admin/parts/<%= p.id %>/edit">編輯</a>
+                  <form method="POST" action="/admin/parts/<%= p.id %>/delete" class="inline-form" onsubmit="return confirm('確定刪除此零件？');">
+                    <button type="submit" class="btn btn-small btn-danger">刪除</button>
+                  </form>
+                </td>
+              <% } %>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<%- include('../partials/foot') %>

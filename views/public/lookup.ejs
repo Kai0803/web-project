@@ -1,0 +1,48 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/public-nav', { user }) %>
+
+<section class="section narrow">
+  <h1>查詢預約進度</h1>
+  <form method="POST" action="/booking/lookup" class="form">
+    <div class="form-row">
+      <label>預約編號</label>
+      <input type="text" name="booking_code" value="<%= query.booking_code || '' %>" placeholder="例如 B7XKQ2" required>
+    </div>
+    <div class="form-row">
+      <label>聯絡電話</label>
+      <input type="tel" name="phone" value="<%= query.phone || '' %>" required>
+    </div>
+    <button type="submit" class="btn btn-primary btn-large">查詢</button>
+  </form>
+
+  <% if (notFound) { %>
+    <div class="flash flash-error">查無此預約資料，請確認預約編號與電話是否正確。</div>
+  <% } %>
+
+  <% if (order) { %>
+    <div class="card order-result">
+      <h3>預約編號：<%= order.booking_code %>
+        <span class="badge <%= STATUS_BADGE_CLASS[order.status] %>"><%= STATUS_LABELS[order.status] %></span>
+      </h3>
+      <p><strong>客戶：</strong><%= order.customer_name %></p>
+      <p><strong>地址：</strong><%= order.address %></p>
+      <p><strong>希望日期／時段：</strong><%= order.preferred_date %> ・ <%= order.preferred_time %></p>
+      <% if (order.scheduled_date) { %>
+        <p><strong>已排定服務時間：</strong><%= order.scheduled_date %> <%= order.scheduled_time || '' %></p>
+      <% } %>
+      <% if (engineerName) { %>
+        <p><strong>服務師傅：</strong><%= engineerName %></p>
+      <% } %>
+      <p><strong>服務項目：</strong></p>
+      <ul>
+        <% orderItems.forEach(function(it) { %>
+          <li><%= it.name_snapshot %> x <%= it.qty %> — <%= formatMoney(it.unit_price * it.qty) %></li>
+        <% }) %>
+      </ul>
+      <p><strong>預估金額：</strong><%= formatMoney(order.total_amount) %></p>
+      <% if (order.note) { %><p><strong>備註：</strong><%= order.note %></p><% } %>
+    </div>
+  <% } %>
+</section>
+
+<%- include('../partials/foot') %>

@@ -1,0 +1,111 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/admin-nav', { user, active }) %>
+
+<section class="section">
+  <h1>儀表板</h1>
+
+  <% if (isAdmin) { %>
+    <div class="stat-grid">
+      <div class="stat-card">
+        <p class="stat-number"><%= pendingCount %></p>
+        <p class="stat-label">待確認預約</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-number"><%= todayCount %></p>
+        <p class="stat-label">今日排定工單</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-number"><%= lowStock.length %></p>
+        <p class="stat-label">零件庫存偏低</p>
+      </div>
+      <div class="stat-card">
+        <p class="stat-number"><%= maintenanceTools %></p>
+        <p class="stat-label">工具維修中</p>
+      </div>
+    </div>
+
+    <h2>最新待確認預約</h2>
+    <% if (recentOrders.length === 0) { %>
+      <p class="muted">目前沒有待確認的預約。</p>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>預約編號</th><th>客戶</th><th>電話</th><th>希望日期</th><th>狀態</th><th></th></tr></thead>
+        <tbody>
+          <% recentOrders.forEach(function(o) { %>
+            <tr>
+              <td><%= o.booking_code %></td>
+              <td><%= o.customer_name %></td>
+              <td><%= o.phone %></td>
+              <td><%= o.preferred_date %> <%= o.preferred_time %></td>
+              <td><span class="badge <%= STATUS_BADGE_CLASS[o.status] %>"><%= STATUS_LABELS[o.status] %></span></td>
+              <td><a class="btn btn-small" href="/admin/orders/<%= o.id %>">處理</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+
+    <% if (lowStock.length > 0) { %>
+      <h2>庫存偏低零件</h2>
+      <table class="table">
+        <thead><tr><th>零件</th><th>目前庫存</th><th>警戒值</th></tr></thead>
+        <tbody>
+          <% lowStock.forEach(function(p) { %>
+            <tr><td><%= p.name %></td><td><%= p.stock_qty %> <%= p.unit %></td><td><%= p.low_stock_threshold %></td></tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+
+  <% } else { %>
+    <h2>今日工單</h2>
+    <% if (myToday.length === 0) { %>
+      <p class="muted">今天沒有排定的工單。</p>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>時段</th><th>客戶</th><th>地址</th><th>狀態</th><th></th></tr></thead>
+        <tbody>
+          <% myToday.forEach(function(o) { %>
+            <tr>
+              <td><%= o.scheduled_time || o.preferred_time %></td>
+              <td><%= o.customer_name %></td>
+              <td><%= o.address %></td>
+              <td><span class="badge <%= STATUS_BADGE_CLASS[o.status] %>"><%= STATUS_LABELS[o.status] %></span></td>
+              <td><a class="btn btn-small" href="/admin/orders/<%= o.id %>">查看</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+
+    <h2>近期工單</h2>
+    <% if (myUpcoming.length === 0) { %>
+      <p class="muted">沒有其他待處理工單。</p>
+    <% } else { %>
+      <table class="table">
+        <thead><tr><th>日期</th><th>客戶</th><th>狀態</th><th></th></tr></thead>
+        <tbody>
+          <% myUpcoming.forEach(function(o) { %>
+            <tr>
+              <td><%= o.scheduled_date || o.preferred_date %></td>
+              <td><%= o.customer_name %></td>
+              <td><span class="badge <%= STATUS_BADGE_CLASS[o.status] %>"><%= STATUS_LABELS[o.status] %></span></td>
+              <td><a class="btn btn-small" href="/admin/orders/<%= o.id %>">查看</a></td>
+            </tr>
+          <% }) %>
+        </tbody>
+      </table>
+    <% } %>
+
+    <h2>我持有的工具</h2>
+    <% if (myTools.length === 0) { %>
+      <p class="muted">目前沒有借用中的工具。</p>
+    <% } else { %>
+      <ul>
+        <% myTools.forEach(function(t) { %><li><%= t.name %>（<%= t.code %>）</li><% }) %>
+      </ul>
+    <% } %>
+  <% } %>
+</section>
+
+<%- include('../partials/foot') %>

@@ -1,0 +1,43 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/admin-nav', { user, active }) %>
+
+<section class="section">
+  <h1>預約 / 工單</h1>
+
+  <% if (user.role === 'admin') { %>
+    <form method="GET" action="/admin/orders" class="filter-form">
+      <select name="status" onchange="this.form.submit()">
+        <option value="">全部狀態</option>
+        <% Object.keys(STATUS_LABELS).forEach(function(s) { %>
+          <option value="<%= s %>" <%= statusFilter === s ? 'selected' : '' %>><%= STATUS_LABELS[s] %></option>
+        <% }) %>
+      </select>
+    </form>
+  <% } %>
+
+  <% if (orders.length === 0) { %>
+    <p class="muted">目前沒有符合條件的工單。</p>
+  <% } else { %>
+    <table class="table">
+      <thead>
+        <tr><th>預約編號</th><th>客戶</th><th>電話</th><th>日期/時段</th><th>師傅</th><th>金額</th><th>狀態</th><th></th></tr>
+      </thead>
+      <tbody>
+        <% orders.forEach(function(o) { %>
+          <tr>
+            <td><%= o.booking_code %></td>
+            <td><%= o.customer_name %></td>
+            <td><%= o.phone %></td>
+            <td><%= o.scheduled_date || o.preferred_date %> <%= o.scheduled_time || o.preferred_time %></td>
+            <td><%= o.engineer_name || '未指派' %></td>
+            <td><%= formatMoney(o.total_amount) %></td>
+            <td><span class="badge <%= STATUS_BADGE_CLASS[o.status] %>"><%= STATUS_LABELS[o.status] %></span></td>
+            <td><a class="btn btn-small" href="/admin/orders/<%= o.id %>">處理</a></td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+  <% } %>
+</section>
+
+<%- include('../partials/foot') %>

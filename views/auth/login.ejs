@@ -1,0 +1,25 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/public-nav', { user: null }) %>
+
+<section class="section narrow center">
+  <h1>員工登入</h1>
+  <p class="muted">供空調工程師與內部人員登入管理系統</p>
+
+  <% if (error) { %>
+    <div class="flash flash-error"><%= error %></div>
+  <% } %>
+
+  <form method="POST" action="/login" class="form">
+    <div class="form-row">
+      <label>帳號</label>
+      <input type="text" name="username" value="<%= username %>" autofocus required>
+    </div>
+    <div class="form-row">
+      <label>密碼</label>
+      <input type="password" name="password" required>
+    </div>
+    <button type="submit" class="btn btn-primary btn-large">登入</button>
+  </form>
+</section>
+
+<%- include('../partials/foot') %>

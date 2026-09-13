@@ -1,0 +1,69 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/public-nav', { user }) %>
+
+<section class="section narrow">
+  <h1>線上預約</h1>
+  <p class="muted">請填寫以下資訊，我們將盡快與您確認服務時間。</p>
+
+  <% if (errors && errors.length) { %>
+    <div class="flash flash-error">
+      <ul>
+        <% errors.forEach(function(e) { %><li><%= e %></li><% }) %>
+      </ul>
+    </div>
+  <% } %>
+
+  <form method="POST" action="/booking" class="form">
+    <div class="form-row">
+      <label>姓名 <span class="req">*</span></label>
+      <input type="text" name="customer_name" value="<%= formData.customer_name || '' %>" required>
+    </div>
+    <div class="form-row">
+      <label>聯絡電話 <span class="req">*</span></label>
+      <input type="tel" name="phone" value="<%= formData.phone || '' %>" placeholder="0912345678" required>
+    </div>
+    <div class="form-row">
+      <label>服務地址 <span class="req">*</span></label>
+      <input type="text" name="address" value="<%= formData.address || '' %>" required>
+    </div>
+    <div class="form-row">
+      <label>希望服務日期 <span class="req">*</span></label>
+      <input type="date" name="preferred_date" value="<%= formData.preferred_date || '' %>" required>
+    </div>
+    <div class="form-row">
+      <label>希望服務時段 <span class="req">*</span></label>
+      <select name="preferred_time" required>
+        <option value="">請選擇</option>
+        <% timeSlots.forEach(function(slot) { %>
+          <option value="<%= slot %>" <%= formData.preferred_time === slot ? 'selected' : '' %>><%= slot %></option>
+        <% }) %>
+      </select>
+    </div>
+
+    <div class="form-row">
+      <label>服務項目（可複選）<span class="req">*</span></label>
+      <% var selectedIds = (formData.serviceItemIds || []).map(Number); %>
+      <% Object.keys(grouped).forEach(function(category) { %>
+        <fieldset class="checkbox-group">
+          <legend><%= category %></legend>
+          <% grouped[category].forEach(function(item) { %>
+            <label class="checkbox-item">
+              <input type="checkbox" name="service_item_ids" value="<%= item.id %>"
+                <%= selectedIds.includes(item.id) ? 'checked' : '' %>>
+              <%= item.name %>（<%= formatMoney(item.base_price) %> / <%= item.unit %>）
+            </label>
+          <% }) %>
+        </fieldset>
+      <% }) %>
+    </div>
+
+    <div class="form-row">
+      <label>備註</label>
+      <textarea name="note" rows="3" placeholder="例如：冷氣型號、樓層、停車資訊等"><%= formData.note || '' %></textarea>
+    </div>
+
+    <button type="submit" class="btn btn-primary btn-large">送出預約</button>
+  </form>
+</section>
+
+<%- include('../partials/foot') %>

@@ -1,0 +1,144 @@
+<%- include('../partials/head', { title }) %>
+<%- include('../partials/admin-nav', { user, active }) %>
+
+<section class="section">
+  <a href="/admin/orders" class="back-link">&larr; 返回工單列表</a>
+  <h1>工單 <%= order.booking_code %>
+    <span class="badge <%= STATUS_BADGE_CLASS[order.status] %>"><%= STATUS_LABELS[order.status] %></span>
+  </h1>
+
+  <div class="detail-grid">
+    <div class="card">
+      <h3>客戶資訊</h3>
+      <p><strong>姓名：</strong><%= order.customer_name %></p>
+      <p><strong>電話：</strong><%= order.phone %></p>
+      <p><strong>地址：</strong><%= order.address %></p>
+      <p><strong>希望日期/時段：</strong><%= order.preferred_date %> ・ <%= order.preferred_time %></p>
+      <% if (order.note) { %><p><strong>備註：</strong><%= order.note %></p><% } %>
+      <p><strong>建立時間：</strong><%= order.created_at %></p>
+    </div>
+
+    <div class="card">
+      <h3>排程與指派</h3>
+      <% if (user.role === 'admin') { %>
+        <form method="POST" action="/admin/orders/<%= order.id %>/assign" class="form">
+          <div class="form-row">
+            <label>指派工程師</label>
+            <select name="assigned_engineer_id">
+              <option value="">未指派</option>
+              <% engineers.forEach(function(e) { %>
+                <option value="<%= e.id %>" <%= order.assigned_engineer_id === e.id ? 'selected' : '' %>><%= e.name %></option>
+              <% }) %>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>排定日期</label>
+            <input type="date" name="scheduled_date" value="<%= order.scheduled_date || '' %>">
+          </div>
+          <div class="form-row">
+            <label>排定時段</label>
+            <input type="text" name="scheduled_time" value="<%= order.scheduled_time || '' %>" placeholder="例如 上午 09:00-12:00">
+          </div>
+          <button type="submit" class="btn btn-primary">儲存排程</button>
+        </form>
+      <% } else { %>
+        <p><strong>工程師：</strong><%= engineer ? engineer.name : '未指派' %></p>
+        <p><strong>排定日期/時段：</strong><%= order.scheduled_date || '未排定' %> <%= order.scheduled_time || '' %></p>
+      <% } %>
+
+      <h4>更新狀態</h4>
+      <form method="POST" action="/admin/orders/<%= order.id %>/status" class="inline-form">
+        <select name="status">
+          <% var allowed = user.role === 'admin' ? Object.keys(STATUS_LABELS) : ['in_progress', 'completed']; %>
+          <% allowed.forEach(function(s) { %>
+            <option value="<%= s %>" <%= order.status === s ? 'selected' : '' %>><%= STATUS_LABELS[s] %></option>
+          <% }) %>
+        </select>
+        <button type="submit" class="btn btn-small">更新狀態</button>
+      </form>
+
+      <% if (user.role === 'admin' && order.status !== 'cancelled' && order.status !== 'completed') { %>
+        <form method="POST" action="/admin/orders/<%= order.id %>/cancel" class="inline-form" onsubmit="return confirm('確定要取消此工單嗎？');">
+          <button type="submit" class="btn btn-small btn-danger">取消工單</button>
+        </form>
+      <% } %>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>服務項目（工項）</h3>
+    <table class="table">
+      <thead><tr><th>項目</th><th>數量</th><th>單價</th><th>小計</th><% if (user.role === 'admin') { %><th></th><% } %></tr></thead>
+      <tbody>
+        <% orderItems.forEach(function(it) { %>
+          <tr>
+            <td><%= it.name_snapshot %></td>
+            <td><%= it.qty %></td>
+            <td><%= formatMoney(it.unit_price) %></td>
+            <td><%= formatMoney(it.unit_price * it.qty) %></td>
+            <% if (user.role === 'admin') { %>
+              <td>
+                <form method="POST" action="/admin/orders/<%= order.id %>/items/<%= it.id %>/remove" onsubmit="return confirm('移除此項目？');">
+                  <button type="submit" class="btn btn-small btn-danger">移除</button>
+                </form>
+              </td>
+            <% } %>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <% if (user.role === 'admin') { %>
+      <form method="POST" action="/admin/orders/<%= order.id %>/items/add" class="inline-form">
+        <select name="service_item_id">
+          <% serviceItems.forEach(function(si) { %>
+            <option value="<%= si.id %>"><%= si.name %>（<%= formatMoney(si.base_price) %>）</option>
+          <% }) %>
+        </select>
+        <input type="number" name="qty" value="1" min="1" style="width:70px">
+        <button type="submit" class="btn btn-small">新增項目</button>
+      </form>
+    <% } %>
+  </div>
+
+  <div class="card">
+    <h3>使用零件</h3>
+    <% if (typeof partError !== 'undefined' && partError) { %>
+      <div class="flash flash-error"><%= partError %></div>
+    <% } %>
+    <table class="table">
+      <thead><tr><th>零件</th><th>數量</th><th>單價</th><th>小計</th><th></th></tr></thead>
+      <tbody>
+        <% orderParts.forEach(function(op) { %>
+          <tr>
+            <td><%= op.name_snapshot %></td>
+            <td><%= op.qty %></td>
+            <td><%= formatMoney(op.unit_price) %></td>
+            <td><%= formatMoney(op.unit_price * op.qty) %></td>
+            <td>
+              <form method="POST" action="/admin/orders/<%= order.id %>/parts/<%= op.id %>/remove" onsubmit="return confirm('移除此零件使用紀錄？（庫存將歸還）');">
+                <button type="submit" class="btn btn-small btn-danger">移除</button>
+              </form>
+            </td>
+          </tr>
+        <% }) %>
+      </tbody>
+    </table>
+
+    <form method="POST" action="/admin/orders/<%= order.id %>/parts/add" class="inline-form">
+      <select name="part_id">
+        <% parts.forEach(function(p) { %>
+          <option value="<%= p.id %>"><%= p.name %>（庫存 <%= p.stock_qty %> <%= p.unit %>）</option>
+        <% }) %>
+      </select>
+      <input type="number" name="qty" value="1" min="1" style="width:70px">
+      <button type="submit" class="btn btn-small">登記使用零件</button>
+    </form>
+  </div>
+
+  <div class="card total-card">
+    <h3>預估總金額：<%= formatMoney(order.total_amount) %></h3>
+  </div>
+</section>
+
+<%- include('../partials/foot') %>

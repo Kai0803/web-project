@@ -1,0 +1,14 @@
+<%- include('partials/head', { title }) %>
+<% if (user) { %>
+  <%- include('partials/admin-nav', { user, active: '' }) %>
+<% } else { %>
+  <%- include('partials/public-nav', { user: null }) %>
+<% } %>
+
+<section class="section narrow center">
+  <h1>發生錯誤</h1>
+  <p><%= message %></p>
+  <a class="btn btn-outline" href="/">回首頁</a>
+</section>
+
+<%- include('partials/foot') %>
