@@ -37,3 +37,42 @@ npm start
 > 正式上線前請務必修改預設密碼，並設定環境變數 `SESSION_SECRET` 為隨機字串。
 
 若要重新產生測試資料，刪除 `data/app.sqlite` 後重新啟動即可。
+
+## 容器化部署（Podman / Kubernetes YAML）
+
+以 `podman kube play` 啟動，資料庫存放在 PVC volume，容器重建不會遺失資料：
+
+```bash
+podman build -t ac-service:latest .
+podman kube play deploy/ac-service.yaml
+```
+
+啟動後開啟 http://localhost:3000 。常用指令：
+
+```bash
+podman pod ps                                  # 查看 pod 狀態
+podman logs -f ac-service-app                  # 查看 log
+podman kube down deploy/ac-service.yaml        # 停止並移除 pod（保留資料）
+podman volume rm ac-service-data               # 清除資料庫
+podman kube generate ac-service                # 由現有 pod 反向產生 YAML
+```
+
+`/healthz` 端點供 readiness / liveness probe 使用，會實際查詢資料庫確認連線正常。
+
+程式碼修改後需重新 build 並重啟：
+
+```bash
+podman kube down deploy/ac-service.yaml
+podman build -t ac-service:latest .
+podman kube play deploy/ac-service.yaml
+```
+
+### 正式環境注意事項
+
+`deploy/ac-service.yaml` 內的 Secret 為開發用預設值，正式環境請替換：
+
+```bash
+openssl rand -base64 32    # 將結果填入 session-secret
+```
+
+此 YAML 也可直接套用於 Kubernetes（`kubectl apply -f`），但需先將 image 推送至 registry、把 `imagePullPolicy` 改為 `IfNotPresent`，並移除 `hostPort` 改用 Service 曝露服務。另外目前 session 存於記憶體，僅支援單一 replica。

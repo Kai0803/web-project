@@ -4,6 +4,8 @@ const path = require('path');
 const express = require('express');
 const session = require('express-session');
 
+const db = require('./db');
+
 const publicRoutes = require('./routes/public');
 const authRoutes = require('./routes/auth');
 const adminOrdersRoutes = require('./routes/adminOrders');
@@ -31,6 +33,16 @@ app.use(
 app.use((req, res, next) => {
   res.locals.user = req.session.user || null;
   next();
+});
+
+// 供容器 liveness / readiness probe 使用
+app.get('/healthz', (req, res) => {
+  try {
+    db.prepare('SELECT 1').get();
+    res.json({ status: 'ok' });
+  } catch (err) {
+    res.status(503).json({ status: 'error' });
+  }
 });
 
 app.use('/', publicRoutes);
