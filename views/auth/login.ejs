@@ -10,6 +10,7 @@
   <% } %>
 
   <form method="POST" action="/login" class="form">
+    <%- include("../partials/csrf") %>
     <div class="form-row">
       <label>帳號</label>
       <input type="text" name="username" value="<%= username %>" autofocus required>

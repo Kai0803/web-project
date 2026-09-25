@@ -9,6 +9,7 @@
       <div class="card">
         <h3><%= editPart ? '編輯零件' : '新增零件' %></h3>
         <form method="POST" action="<%= editPart ? '/admin/parts/' + editPart.id : '/admin/parts' %>" class="form">
+          <%- include("../partials/csrf") %>
           <div class="form-row">
             <label>名稱</label>
             <input type="text" name="name" value="<%= editPart ? editPart.name : '' %>" required>
@@ -59,7 +60,8 @@
               <% if (user.role === 'admin') { %>
                 <td>
                   <a class="btn btn-small" href="/admin/parts/<%= p.id %>/edit">編輯</a>
-                  <form method="POST" action="/admin/parts/<%= p.id %>/delete" class="inline-form" onsubmit="return confirm('確定刪除此零件？');">
+                  <form method="POST" action="/admin/parts/<%= p.id %>/delete" class="inline-form" data-confirm="確定刪除此零件？">
+                    <%- include("../partials/csrf") %>
                     <button type="submit" class="btn btn-small btn-danger">刪除</button>
                   </form>
                 </td>

@@ -19,4 +19,11 @@ function requireRole(...roles) {
   };
 }
 
-module.exports = { requireAuth, requireRole };
+function requirePasswordChanged(req, res, next) {
+  if (req.session.user && req.session.user.mustChangePassword) {
+    return res.redirect('/change-password');
+  }
+  next();
+}
+
+module.exports = { requireAuth, requireRole, requirePasswordChanged };

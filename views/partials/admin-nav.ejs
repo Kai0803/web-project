@@ -15,7 +15,11 @@
       </nav>
       <div class="topbar-user">
         <span><%= user.name %>（<%= user.role === 'admin' ? '管理員' : '工程師' %>）</span>
-        <a href="/logout" class="btn btn-small">登出</a>
+        <a href="/change-password" class="btn btn-small">變更密碼</a>
+        <form method="POST" action="/logout" class="inline-form">
+          <%- include("../partials/csrf") %>
+          <button type="submit" class="btn btn-small">登出</button>
+        </form>
       </div>
     </div>
   </header>

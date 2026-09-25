@@ -10,6 +10,7 @@
     <div class="card">
       <h3>新增人員</h3>
       <form method="POST" action="/admin/users" class="form">
+        <%- include("../partials/csrf") %>
         <div class="form-row">
           <label>姓名</label>
           <input type="text" name="name" required>
@@ -51,11 +52,13 @@
               <td><%= u.active ? '啟用' : '停用' %></td>
               <td class="action-cell">
                 <form method="POST" action="/admin/users/<%= u.id %>/toggle-active" class="inline-form">
+                  <%- include("../partials/csrf") %>
                   <button type="submit" class="btn btn-small <%= u.active ? 'btn-warning' : '' %>"><%= u.active ? '停用' : '啟用' %></button>
                 </form>
                 <details class="inline-details">
                   <summary class="btn btn-small">重設密碼</summary>
                   <form method="POST" action="/admin/users/<%= u.id %>/reset-password" class="inline-form">
+                    <%- include("../partials/csrf") %>
                     <input type="password" name="password" placeholder="新密碼" minlength="4" required>
                     <button type="submit" class="btn btn-small">確認</button>
                   </form>

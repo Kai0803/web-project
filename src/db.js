@@ -104,6 +104,26 @@ CREATE TABLE IF NOT EXISTS order_parts (
 CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(phone);
 CREATE INDEX IF NOT EXISTS idx_orders_engineer ON orders(assigned_engineer_id);
+
+CREATE TABLE IF NOT EXISTS sessions (
+  sid TEXT PRIMARY KEY,
+  expires_at INTEGER NOT NULL,
+  data TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at);
 `);
+
+// 既有資料庫的欄位增補（CREATE TABLE IF NOT EXISTS 不會補欄位）
+function addColumnIfMissing(table, column, definition) {
+  const columns = db.prepare(`PRAGMA table_info(${table})`).all();
+  if (!columns.some((c) => c.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+addColumnIfMissing('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('users', 'locked_until', 'TEXT');
 
 module.exports = db;

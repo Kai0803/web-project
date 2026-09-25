@@ -22,6 +22,7 @@
       <h3>排程與指派</h3>
       <% if (user.role === 'admin') { %>
         <form method="POST" action="/admin/orders/<%= order.id %>/assign" class="form">
+          <%- include("../partials/csrf") %>
           <div class="form-row">
             <label>指派工程師</label>
             <select name="assigned_engineer_id">
@@ -48,6 +49,7 @@
 
       <h4>更新狀態</h4>
       <form method="POST" action="/admin/orders/<%= order.id %>/status" class="inline-form">
+        <%- include("../partials/csrf") %>
         <select name="status">
           <% var allowed = user.role === 'admin' ? Object.keys(STATUS_LABELS) : ['in_progress', 'completed']; %>
           <% allowed.forEach(function(s) { %>
@@ -58,7 +60,8 @@
       </form>
 
       <% if (user.role === 'admin' && order.status !== 'cancelled' && order.status !== 'completed') { %>
-        <form method="POST" action="/admin/orders/<%= order.id %>/cancel" class="inline-form" onsubmit="return confirm('確定要取消此工單嗎？');">
+        <form method="POST" action="/admin/orders/<%= order.id %>/cancel" class="inline-form" data-confirm="確定要取消此工單嗎？">
+          <%- include("../partials/csrf") %>
           <button type="submit" class="btn btn-small btn-danger">取消工單</button>
         </form>
       <% } %>
@@ -78,7 +81,8 @@
             <td><%= formatMoney(it.unit_price * it.qty) %></td>
             <% if (user.role === 'admin') { %>
               <td>
-                <form method="POST" action="/admin/orders/<%= order.id %>/items/<%= it.id %>/remove" onsubmit="return confirm('移除此項目？');">
+                <form method="POST" action="/admin/orders/<%= order.id %>/items/<%= it.id %>/remove" data-confirm="移除此項目？">
+                  <%- include("../partials/csrf") %>
                   <button type="submit" class="btn btn-small btn-danger">移除</button>
                 </form>
               </td>
@@ -90,6 +94,7 @@
 
     <% if (user.role === 'admin') { %>
       <form method="POST" action="/admin/orders/<%= order.id %>/items/add" class="inline-form">
+        <%- include("../partials/csrf") %>
         <select name="service_item_id">
           <% serviceItems.forEach(function(si) { %>
             <option value="<%= si.id %>"><%= si.name %>（<%= formatMoney(si.base_price) %>）</option>
@@ -116,7 +121,8 @@
             <td><%= formatMoney(op.unit_price) %></td>
             <td><%= formatMoney(op.unit_price * op.qty) %></td>
             <td>
-              <form method="POST" action="/admin/orders/<%= order.id %>/parts/<%= op.id %>/remove" onsubmit="return confirm('移除此零件使用紀錄？（庫存將歸還）');">
+              <form method="POST" action="/admin/orders/<%= order.id %>/parts/<%= op.id %>/remove" data-confirm="移除此零件使用紀錄？（庫存將歸還）">
+                <%- include("../partials/csrf") %>
                 <button type="submit" class="btn btn-small btn-danger">移除</button>
               </form>
             </td>
@@ -126,6 +132,7 @@
     </table>
 
     <form method="POST" action="/admin/orders/<%= order.id %>/parts/add" class="inline-form">
+      <%- include("../partials/csrf") %>
       <select name="part_id">
         <% parts.forEach(function(p) { %>
           <option value="<%= p.id %>"><%= p.name %>（庫存 <%= p.stock_qty %> <%= p.unit %>）</option>

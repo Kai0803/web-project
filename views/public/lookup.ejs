@@ -4,6 +4,7 @@
 <section class="section narrow">
   <h1>查詢預約進度</h1>
   <form method="POST" action="/booking/lookup" class="form">
+    <%- include("../partials/csrf") %>
     <div class="form-row">
       <label>預約編號</label>
       <input type="text" name="booking_code" value="<%= query.booking_code || '' %>" placeholder="例如 B7XKQ2" required>

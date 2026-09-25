@@ -4,9 +4,10 @@ const db = require('../db');
 function seed() {
   const userCount = db.prepare('SELECT COUNT(*) AS c FROM users').get().c;
   if (userCount === 0) {
+    // 預設帳號密碼公開於 README，強制首次登入時更換
     const insertUser = db.prepare(`
-      INSERT INTO users (name, username, password_hash, role, phone)
-      VALUES (@name, @username, @password_hash, @role, @phone)
+      INSERT INTO users (name, username, password_hash, role, phone, must_change_password)
+      VALUES (@name, @username, @password_hash, @role, @phone, 1)
     `);
     insertUser.run({
       name: '系統管理員',

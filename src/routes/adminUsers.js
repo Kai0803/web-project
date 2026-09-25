@@ -31,9 +31,10 @@ router.post('/users', (req, res) => {
   }
 
   try {
+    // 由管理員設定的初始密碼，要求本人首次登入時自行更換
     db.prepare(`
-      INSERT INTO users (name, username, password_hash, role, phone)
-      VALUES (?, ?, ?, ?, ?)
+      INSERT INTO users (name, username, password_hash, role, phone, must_change_password)
+      VALUES (?, ?, ?, ?, ?, 1)
     `).run(name.trim(), username.trim(), bcrypt.hashSync(password, 10), role, phone ? phone.trim() : null);
     res.redirect('/admin/users');
   } catch (e) {
@@ -58,8 +59,11 @@ router.post('/users/:id/toggle-active', (req, res) => {
 
 router.post('/users/:id/reset-password', (req, res) => {
   const { password } = req.body;
-  if (password && password.length >= 4) {
-    db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), req.params.id);
+  if (password && password.length >= 8) {
+    // 一併解除鎖定，並要求對方下次登入自行更換
+    db.prepare(
+      'UPDATE users SET password_hash = ?, must_change_password = 1, failed_attempts = 0, locked_until = NULL WHERE id = ?'
+    ).run(bcrypt.hashSync(password, 10), req.params.id);
   }
   res.redirect('/admin/users');
 });

@@ -9,6 +9,7 @@
       <div class="card">
         <h3><%= editTool ? '編輯工具' : '新增工具' %></h3>
         <form method="POST" action="<%= editTool ? '/admin/tools/' + editTool.id : '/admin/tools' %>" class="form">
+          <%- include("../partials/csrf") %>
           <div class="form-row">
             <label>工具名稱</label>
             <input type="text" name="name" value="<%= editTool ? editTool.name : '' %>" required>
@@ -46,11 +47,13 @@
               <td class="action-cell">
                 <% if (t.status === 'available') { %>
                   <form method="POST" action="/admin/tools/<%= t.id %>/checkout" class="inline-form">
+                    <%- include("../partials/csrf") %>
                     <button type="submit" class="btn btn-small">借用</button>
                   </form>
                 <% } %>
                 <% if (t.status === 'in_use' && (user.role === 'admin' || t.current_holder_id === user.id)) { %>
                   <form method="POST" action="/admin/tools/<%= t.id %>/return" class="inline-form">
+                    <%- include("../partials/csrf") %>
                     <button type="submit" class="btn btn-small">歸還</button>
                   </form>
                 <% } %>
@@ -58,15 +61,18 @@
                   <a class="btn btn-small" href="/admin/tools/<%= t.id %>/edit">編輯</a>
                   <% if (t.status !== 'maintenance') { %>
                     <form method="POST" action="/admin/tools/<%= t.id %>/maintenance" class="inline-form">
+                      <%- include("../partials/csrf") %>
                       <button type="submit" class="btn btn-small btn-warning">送修</button>
                     </form>
                   <% } else { %>
                     <form method="POST" action="/admin/tools/<%= t.id %>/available" class="inline-form">
+                      <%- include("../partials/csrf") %>
                       <button type="submit" class="btn btn-small">修復可用</button>
                     </form>
                   <% } %>
                   <% if (t.status !== 'retired') { %>
-                    <form method="POST" action="/admin/tools/<%= t.id %>/retire" class="inline-form" onsubmit="return confirm('確定要將此工具報廢嗎？');">
+                    <form method="POST" action="/admin/tools/<%= t.id %>/retire" class="inline-form" data-confirm="確定要將此工具報廢嗎？">
+                      <%- include("../partials/csrf") %>
                       <button type="submit" class="btn btn-small btn-danger">報廢</button>
                     </form>
                   <% } %>

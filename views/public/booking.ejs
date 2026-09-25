@@ -14,6 +14,7 @@
   <% } %>
 
   <form method="POST" action="/booking" class="form">
+    <%- include("../partials/csrf") %>
     <div class="form-row">
       <label>姓名 <span class="req">*</span></label>
       <input type="text" name="customer_name" value="<%= formData.customer_name || '' %>" required>
