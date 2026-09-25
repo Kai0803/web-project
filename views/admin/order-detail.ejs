@@ -11,11 +11,25 @@
     <div class="card">
       <h3>客戶資訊</h3>
       <p><strong>姓名：</strong><%= order.customer_name %></p>
-      <p><strong>電話：</strong><%= order.phone %></p>
-      <p><strong>地址：</strong><%= order.address %></p>
+      <p><strong>電話：</strong><a href="tel:<%= order.phone.replace(/[^0-9+]/g, '') %>"><%= order.phone %></a></p>
+      <p><strong>地址：</strong><a href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(order.address) %>" target="_blank" rel="noopener"><%= order.address %></a></p>
       <p><strong>希望日期/時段：</strong><%= order.preferred_date %> ・ <%= order.preferred_time %></p>
       <% if (order.note) { %><p><strong>備註：</strong><%= order.note %></p><% } %>
       <p><strong>建立時間：</strong><%= order.created_at %></p>
+      <% if (order.completed_at) { %><p><strong>完工時間：</strong><%= order.completed_at %></p><% } %>
+
+      <!-- 現場單手操作用的快捷鍵 -->
+      <div class="quick-actions">
+        <a class="btn btn-large" href="tel:<%= order.phone.replace(/[^0-9+]/g, '') %>">📞 撥號</a>
+        <a class="btn btn-large" href="https://www.google.com/maps/search/?api=1&query=<%= encodeURIComponent(order.address) %>" target="_blank" rel="noopener">🗺️ 導航</a>
+        <% if (order.status === 'scheduled') { %>
+          <form method="POST" action="/admin/orders/<%= order.id %>/status" class="inline-form">
+            <%- include("../partials/csrf") %>
+            <input type="hidden" name="status" value="in_progress">
+            <button type="submit" class="btn btn-large btn-primary">▶ 開始服務</button>
+          </form>
+        <% } %>
+      </div>
     </div>
 
     <div class="card">
@@ -141,6 +155,80 @@
       <input type="number" name="qty" value="1" min="1" style="width:70px">
       <button type="submit" class="btn btn-small">登記使用零件</button>
     </form>
+  </div>
+
+  <div class="card">
+    <h3>施工照片</h3>
+    <% if (photoError) { %><div class="flash flash-error"><%= photoError %></div><% } %>
+
+    <% if (photos.length === 0) { %>
+      <p class="muted">尚未上傳照片。建議至少拍攝施工前、施工後各一張，作為完工證明。</p>
+    <% } else { %>
+      <% ['before', 'after', 'other'].forEach(function(kind) { %>
+        <% var group = photos.filter(function(p) { return p.kind === kind; }); %>
+        <% if (group.length) { %>
+          <h4><%= kind === 'before' ? '施工前' : (kind === 'after' ? '施工後' : '其他') %></h4>
+          <div class="photo-grid">
+            <% group.forEach(function(p) { %>
+              <figure class="photo-item">
+                <a href="/admin/orders/<%= order.id %>/photos/<%= p.id %>" target="_blank" rel="noopener">
+                  <img src="/admin/orders/<%= order.id %>/photos/<%= p.id %>" alt="<%= p.caption || '施工照片' %>" loading="lazy">
+                </a>
+                <figcaption>
+                  <% if (p.caption) { %><span><%= p.caption %></span><% } %>
+                  <form method="POST" action="/admin/orders/<%= order.id %>/photos/<%= p.id %>/delete" class="inline-form" data-confirm="確定刪除這張照片？">
+                    <%- include("../partials/csrf") %>
+                    <button type="submit" class="btn btn-small btn-danger">刪除</button>
+                  </form>
+                </figcaption>
+              </figure>
+            <% }) %>
+          </div>
+        <% } %>
+      <% }) %>
+    <% } %>
+
+    <form method="POST" action="/admin/orders/<%= order.id %>/photos" enctype="multipart/form-data" class="form">
+      <%- include("../partials/csrf") %>
+      <div class="form-row">
+        <label>拍攝階段</label>
+        <select name="kind">
+          <option value="before">施工前</option>
+          <option value="after">施工後</option>
+          <option value="other">其他</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <label>說明（選填）</label>
+        <input type="text" name="caption" maxlength="200" placeholder="例如：客廳室內機濾網">
+      </div>
+      <div class="form-row">
+        <label>選擇照片（可一次多張，單張上限 8MB）</label>
+        <input type="file" name="photos" accept="image/jpeg,image/png,image/webp" capture="environment" multiple required>
+      </div>
+      <button type="submit" class="btn btn-primary btn-large">上傳照片</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>客戶完工簽收</h3>
+    <% if (signature) { %>
+      <p class="muted">客戶已於 <%= signature.created_at %> 簽收</p>
+      <img class="signature-image" src="/admin/orders/<%= order.id %>/photos/<%= signature.id %>" alt="客戶簽名">
+    <% } else if (order.status === 'cancelled') { %>
+      <p class="muted">此工單已取消。</p>
+    <% } else { %>
+      <p class="muted">請客戶在下方簽名確認完工，送出後工單將標記為「已完成」。</p>
+      <div class="signature-pad-wrapper">
+        <canvas id="signature-pad" class="signature-pad" width="600" height="220"></canvas>
+      </div>
+      <form method="POST" action="/admin/orders/<%= order.id %>/signature" id="signature-form" class="inline-form">
+        <%- include("../partials/csrf") %>
+        <input type="hidden" name="signature" id="signature-data">
+        <button type="button" class="btn btn-small" id="signature-clear">清除重簽</button>
+        <button type="submit" class="btn btn-primary btn-large">確認完工並送出簽名</button>
+      </form>
+    <% } %>
   </div>
 
   <div class="card total-card">

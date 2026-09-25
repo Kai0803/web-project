@@ -105,6 +105,18 @@ CREATE INDEX IF NOT EXISTS idx_orders_status ON orders(status);
 CREATE INDEX IF NOT EXISTS idx_orders_phone ON orders(phone);
 CREATE INDEX IF NOT EXISTS idx_orders_engineer ON orders(assigned_engineer_id);
 
+CREATE TABLE IF NOT EXISTS order_photos (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+  filename TEXT NOT NULL,
+  kind TEXT NOT NULL DEFAULT 'other' CHECK (kind IN ('before','after','other','signature')),
+  caption TEXT,
+  uploaded_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_order_photos_order ON order_photos(order_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
   sid TEXT PRIMARY KEY,
   expires_at INTEGER NOT NULL,
@@ -122,6 +134,7 @@ function addColumnIfMissing(table, column, definition) {
   }
 }
 
+addColumnIfMissing('orders', 'completed_at', 'TEXT');
 addColumnIfMissing('users', 'must_change_password', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'failed_attempts', 'INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('users', 'locked_until', 'TEXT');

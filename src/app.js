@@ -8,6 +8,7 @@ const helmet = require('helmet');
 const db = require('./db');
 const SqliteStore = require('./middleware/sessionStore');
 const csrf = require('./middleware/csrf');
+const { upload } = require('./middleware/upload');
 const { requirePasswordChanged } = require('./middleware/auth');
 
 const publicRoutes = require('./routes/public');
@@ -41,8 +42,26 @@ app.use(
   })
 );
 
-app.use(express.urlencoded({ extended: true }));
+// 簽名圖以 data URL 送出，需要比預設 100kb 更寬的上限
+app.use(express.urlencoded({ extended: true, limit: '3mb' }));
 app.use(express.static(path.join(__dirname, '..', 'public')));
+
+// 照片上傳為 multipart，body 必須先由 multer 解析，
+// 後面的 CSRF 中介層才讀得到 _csrf 欄位。其餘路徑維持不解析 multipart，
+// 這樣任何非預期的 multipart 請求都會因缺少 token 而被 CSRF 擋下。
+const photoUpload = upload.array('photos', 10);
+app.use((req, res, next) => {
+  if (req.method === 'POST' && /^\/admin\/orders\/\d+\/photos$/.test(req.path)) {
+    return photoUpload(req, res, (err) => {
+      if (err) {
+        req.uploadError =
+          err.code === 'LIMIT_FILE_SIZE' ? '圖片超過 8MB 上限' : err.message || '圖片上傳失敗';
+      }
+      next();
+    });
+  }
+  next();
+});
 
 // 供容器 liveness / readiness probe 使用。
 // 放在 session middleware 之前，避免每次探測都建立一筆 session。

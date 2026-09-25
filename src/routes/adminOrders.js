@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const db = require('../db');
 const { requireAuth, requireRole } = require('../middleware/auth');
+const { saveSignature, photoPath, removePhoto } = require('../middleware/upload');
 const { STATUS_LABELS, STATUS_BADGE_CLASS, TOOL_STATUS_LABELS, formatMoney } = require('../utils/helpers');
 
 router.use(requireAuth);
@@ -117,38 +118,57 @@ router.get('/orders', (req, res) => {
 });
 
 // ---- Order detail ----
-router.get('/orders/:id', (req, res) => {
-  const user = req.session.user;
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!order) return res.status(404).render('error', { title: '找不到工單', message: '找不到此工單', user });
-  if (!canAccessOrder(user, order)) {
-    return res.status(403).render('error', { title: '權限不足', message: '您沒有權限查看此工單', user });
-  }
+/** 組裝工單頁所需的全部資料，供正常顯示與帶錯誤訊息重新顯示共用 */
+function renderOrderDetail(req, res, order, extra = {}, status = 200) {
+  const photos = db
+    .prepare("SELECT * FROM order_photos WHERE order_id = ? AND kind != 'signature' ORDER BY created_at")
+    .all(order.id);
+  const signature = db
+    .prepare("SELECT * FROM order_photos WHERE order_id = ? AND kind = 'signature' ORDER BY created_at DESC LIMIT 1")
+    .get(order.id);
 
-  const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-  const orderParts = db.prepare('SELECT * FROM order_parts WHERE order_id = ?').all(order.id);
-  const engineers = db.prepare("SELECT id, name FROM users WHERE role = 'engineer' AND active = 1 ORDER BY name").all();
-  const serviceItems = db.prepare('SELECT * FROM service_items ORDER BY category, id').all();
-  const parts = db.prepare('SELECT * FROM parts ORDER BY name').all();
-  const engineer = order.assigned_engineer_id
-    ? db.prepare('SELECT * FROM users WHERE id = ?').get(order.assigned_engineer_id)
-    : null;
-
-  res.render('admin/order-detail', {
+  res.status(status).render('admin/order-detail', {
     title: `工單 ${order.booking_code}`,
     active: 'orders',
-    user,
+    user: req.session.user,
     order,
-    orderItems,
-    orderParts,
-    engineers,
-    serviceItems,
-    parts,
-    engineer,
+    orderItems: db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id),
+    orderParts: db.prepare('SELECT * FROM order_parts WHERE order_id = ?').all(order.id),
+    engineers: db.prepare("SELECT id, name FROM users WHERE role = 'engineer' AND active = 1 ORDER BY name").all(),
+    serviceItems: db.prepare('SELECT * FROM service_items ORDER BY category, id').all(),
+    parts: db.prepare('SELECT * FROM parts ORDER BY name').all(),
+    engineer: order.assigned_engineer_id
+      ? db.prepare('SELECT * FROM users WHERE id = ?').get(order.assigned_engineer_id)
+      : null,
+    photos,
+    signature,
+    partError: null,
+    photoError: null,
     STATUS_LABELS,
     STATUS_BADGE_CLASS,
     formatMoney,
+    ...extra,
   });
+}
+
+/** 取出工單並檢查存取權限，失敗時直接回應錯誤頁並回傳 null */
+function loadOrder(req, res) {
+  const user = req.session.user;
+  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
+  if (!order) {
+    res.status(404).render('error', { title: '找不到工單', message: '找不到此工單', user });
+    return null;
+  }
+  if (!canAccessOrder(user, order)) {
+    res.status(403).render('error', { title: '權限不足', message: '您沒有權限操作此工單', user });
+    return null;
+  }
+  return order;
+}
+
+router.get('/orders/:id', (req, res) => {
+  const order = loadOrder(req, res);
+  if (order) renderOrderDetail(req, res, order);
 });
 
 // ---- Assign engineer / schedule (admin only) ----
@@ -219,12 +239,8 @@ router.post('/orders/:id/items/:itemId/remove', requireRole('admin'), (req, res)
 
 // ---- Add / remove part usage (admin or assigned engineer) ----
 router.post('/orders/:id/parts/add', (req, res) => {
-  const user = req.session.user;
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!order) return res.status(404).render('error', { title: '找不到工單', message: '找不到此工單', user });
-  if (!canAccessOrder(user, order)) {
-    return res.status(403).render('error', { title: '權限不足', message: '您沒有權限操作此工單', user });
-  }
+  const order = loadOrder(req, res);
+  if (!order) return;
 
   const { part_id, qty } = req.body;
   const quantity = Math.max(1, parseInt(qty, 10) || 1);
@@ -232,27 +248,13 @@ router.post('/orders/:id/parts/add', (req, res) => {
   if (!part) return res.redirect(`/admin/orders/${order.id}`);
 
   if (part.stock_qty < quantity) {
-    const orderItems = db.prepare('SELECT * FROM order_items WHERE order_id = ?').all(order.id);
-    const orderParts = db.prepare('SELECT * FROM order_parts WHERE order_id = ?').all(order.id);
-    const engineers = db.prepare("SELECT id, name FROM users WHERE role = 'engineer' AND active = 1 ORDER BY name").all();
-    const serviceItems = db.prepare('SELECT * FROM service_items ORDER BY category, id').all();
-    const parts = db.prepare('SELECT * FROM parts ORDER BY name').all();
-    return res.status(400).render('admin/order-detail', {
-      title: `工單 ${order.booking_code}`,
-      active: 'orders',
-      user,
+    return renderOrderDetail(
+      req,
+      res,
       order,
-      orderItems,
-      orderParts,
-      engineers,
-      serviceItems,
-      parts,
-      engineer: order.assigned_engineer_id ? db.prepare('SELECT * FROM users WHERE id = ?').get(order.assigned_engineer_id) : null,
-      STATUS_LABELS,
-      STATUS_BADGE_CLASS,
-      formatMoney,
-      partError: `庫存不足：「${part.name}」目前庫存 ${part.stock_qty} ${part.unit}`,
-    });
+      { partError: `庫存不足：「${part.name}」目前庫存 ${part.stock_qty} ${part.unit}` },
+      400
+    );
   }
 
   const tx = db.transaction(() => {
@@ -268,12 +270,8 @@ router.post('/orders/:id/parts/add', (req, res) => {
 });
 
 router.post('/orders/:id/parts/:partUsageId/remove', (req, res) => {
-  const user = req.session.user;
-  const order = db.prepare('SELECT * FROM orders WHERE id = ?').get(req.params.id);
-  if (!order) return res.status(404).render('error', { title: '找不到工單', message: '找不到此工單', user });
-  if (!canAccessOrder(user, order)) {
-    return res.status(403).render('error', { title: '權限不足', message: '您沒有權限操作此工單', user });
-  }
+  const order = loadOrder(req, res);
+  if (!order) return;
 
   const usage = db.prepare('SELECT * FROM order_parts WHERE id = ? AND order_id = ?').get(req.params.partUsageId, order.id);
   if (usage) {
@@ -286,6 +284,85 @@ router.post('/orders/:id/parts/:partUsageId/remove', (req, res) => {
     tx();
     recomputeTotal(order.id);
   }
+  res.redirect(`/admin/orders/${order.id}`);
+});
+
+// ---- 施工照片 ----
+// multer 已在 app.js 於 CSRF 檢查前先行解析此路徑的 multipart body
+router.post('/orders/:id/photos', (req, res) => {
+  const order = loadOrder(req, res);
+  if (!order) return;
+
+  if (req.uploadError) {
+    return renderOrderDetail(req, res, order, { photoError: req.uploadError }, 400);
+  }
+  const files = req.files || [];
+  if (files.length === 0) {
+    return renderOrderDetail(req, res, order, { photoError: '請先選擇要上傳的照片' }, 400);
+  }
+
+  const kind = ['before', 'after', 'other'].includes(req.body.kind) ? req.body.kind : 'other';
+  const caption = req.body.caption ? req.body.caption.trim().slice(0, 200) : null;
+  const insert = db.prepare(`
+    INSERT INTO order_photos (order_id, filename, kind, caption, uploaded_by)
+    VALUES (?, ?, ?, ?, ?)
+  `);
+  db.transaction(() => {
+    for (const file of files) insert.run(order.id, file.filename, kind, caption, req.session.user.id);
+  })();
+
+  res.redirect(`/admin/orders/${order.id}`);
+});
+
+router.get('/orders/:id/photos/:photoId', (req, res) => {
+  const order = loadOrder(req, res);
+  if (!order) return;
+
+  const photo = db
+    .prepare('SELECT * FROM order_photos WHERE id = ? AND order_id = ?')
+    .get(req.params.photoId, order.id);
+  const filePath = photo && photoPath(photo.filename);
+  if (!filePath) return res.status(404).end();
+
+  // 照片屬於客戶住家，僅限有權限存取該工單的人員檢視
+  res.sendFile(filePath);
+});
+
+router.post('/orders/:id/photos/:photoId/delete', (req, res) => {
+  const order = loadOrder(req, res);
+  if (!order) return;
+
+  const photo = db
+    .prepare('SELECT * FROM order_photos WHERE id = ? AND order_id = ?')
+    .get(req.params.photoId, order.id);
+  if (photo) {
+    db.prepare('DELETE FROM order_photos WHERE id = ?').run(photo.id);
+    removePhoto(photo.filename);
+  }
+  res.redirect(`/admin/orders/${order.id}`);
+});
+
+// ---- 客戶完工簽收 ----
+router.post('/orders/:id/signature', (req, res) => {
+  const order = loadOrder(req, res);
+  if (!order) return;
+
+  const filename = saveSignature(req.body.signature);
+  if (!filename) {
+    return renderOrderDetail(req, res, order, { photoError: '簽名內容無效，請重新簽一次' }, 400);
+  }
+
+  db.transaction(() => {
+    db.prepare(`
+      INSERT INTO order_photos (order_id, filename, kind, uploaded_by)
+      VALUES (?, ?, 'signature', ?)
+    `).run(order.id, filename, req.session.user.id);
+    // 簽收即代表完工
+    db.prepare(
+      "UPDATE orders SET status = 'completed', completed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?"
+    ).run(order.id);
+  })();
+
   res.redirect(`/admin/orders/${order.id}`);
 });
 
