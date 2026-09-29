@@ -555,7 +555,7 @@ REST + JSON，路徑 `/api/v1/...`。以 `utoipa` 從 Rust 型別產生 OpenAPI�
 | --- | --- | --- |
 | `name` | 公司抬頭 | 空白，待使用者填寫 |
 | `tax_id` / `phone` / `fax` / `email` / `address` | 表頭聯絡資訊 | 空白 |
-| `logo_svg` | Logo 的 SVG 原始碼 | migration 寫入 `assets/brand/` 選定的方案 |
+| `logo_svg` | Logo 的 SVG 原始碼 | migration 寫入 `assets/brand/logo-elbow.svg`（方案 A） |
 | `quote_terms` | 報價單條款 | migration 寫入 `docs/quotation-terms.md` 的範本 |
 
 Logo 存 SVG 原始碼而非檔案路徑：網頁與 typst 可共用同一份，且使用者日後換 logo 只需貼上新的 SVG，不必動容器內的檔案。
@@ -681,5 +681,4 @@ web/src/
 
 1. typst 中文字型的授權是否允許散布於容器映像（思源黑體為 SIL OFL，可）
 2. 公司抬頭與聯絡資訊由使用者自行於系統設定填寫（設計已完成，見第 6 節）
-3. Logo 採用方案 A（彎頭）或方案 C（管網），見 `assets/brand/`
-4. 報價單條款範本是否需請會計師或律師檢視（見 `docs/quotation-terms.md`）
+3. 報價單條款範本是否需請會計師或律師檢視（見 `docs/quotation-terms.md`）
