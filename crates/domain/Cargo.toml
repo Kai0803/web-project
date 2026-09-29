@@ -1,0 +1,16 @@
+[package]
+name = "acms-domain"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# 這份依賴清單刻意不含 sqlx、axum、serde。
+# domain 若寫 `use sqlx::...` 會編譯失敗——這是兩個 crate 切開的唯一目的，
+# 單一 crate 的 module 可見性提供不了這個保證。新增依賴前請先確認理由。
+[dependencies]
+rust_decimal = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+rust_decimal_macros = { workspace = true }
