@@ -1,0 +1,8 @@
+<!-- 方案 A：彎頭。石墨藍管身 + 銅色管口。
+     單色用途（傳真、蓋章、單色印刷）：把 #B87333 改為 #1F3A4D 或背景色。 -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
+  <path d="M 20 80 H 40 A 40 40 0 0 0 80 40 V 20"
+        fill="none" stroke="#1F3A4D" stroke-width="19" stroke-linecap="butt"/>
+  <path d="M 23 70.5 V 89.5" stroke="#B87333" stroke-width="6" stroke-linecap="butt"/>
+  <path d="M 70.5 23 H 89.5" stroke="#B87333" stroke-width="6" stroke-linecap="butt"/>
+</svg>

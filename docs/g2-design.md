@@ -230,12 +230,44 @@ CREATE TABLE users (
 CREATE TRIGGER t_users_touch BEFORE UPDATE ON users
   FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
+-- 角色為資料（使用者可自行新增），權限為程式碼定義的固定集合。
+-- 見第 4.5 節「角色與權限」。
+CREATE TABLE roles (
+  code          text PRIMARY KEY,
+  name          text NOT NULL,
+  description   text,
+  is_system     boolean NOT NULL DEFAULT false,   -- 系統預設角色不可刪除
+  created_at    timestamptz NOT NULL DEFAULT now()
+);
+
+CREATE TABLE role_permissions (
+  role_code     text NOT NULL REFERENCES roles(code) ON DELETE CASCADE,
+  permission    text NOT NULL,
+  PRIMARY KEY (role_code, permission)
+);
+
 -- 一人可兼多角色（使用者確認）
 CREATE TABLE user_roles (
   user_id       bigint NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  role          text NOT NULL,
-  PRIMARY KEY (user_id, role)
+  role_code     text NOT NULL REFERENCES roles(code),
+  PRIMARY KEY (user_id, role_code)
 );
+
+-- 公司資料。單列表，內容由使用者於「系統設定 → 公司資料」頁面填寫。
+CREATE TABLE company_profile (
+  id            smallint PRIMARY KEY DEFAULT 1 CHECK (id = 1),
+  name          text NOT NULL,                    -- 公司抬頭
+  tax_id        text,                             -- 統一編號
+  phone         text,
+  fax           text,
+  email         text,
+  address       text,
+  logo_svg      text,                             -- SVG 原始碼，供網頁與 typst 共用
+  quote_terms   text NOT NULL DEFAULT '',         -- 報價單條款，見 docs/quotation-terms.md
+  updated_at    timestamptz NOT NULL DEFAULT now()
+);
+CREATE TRIGGER t_company_profile_touch BEFORE UPDATE ON company_profile
+  FOR EACH ROW EXECUTE FUNCTION touch_updated_at();
 
 CREATE TABLE customer_contacts (
   id            bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -403,6 +435,47 @@ draft/pending/approved ──► superseded     （產生新版本時舊版轉�
 
 **核准後凍結**：`domain` 定義 `is_mutable(status) -> bool`，僅 `draft` 為 true。所有明細寫入與金額重算的 use case 一律先過此判斷。另加 DB trigger 阻擋對非 `draft` 報價的 `quotation_items` 寫入——此規模 trigger 成本可忽略，且能擋掉手動 SQL 誤操作。G1 成功條件「修改報價產生新版本，保留舊版可查」的前提就是舊版不可變。
 
+### 4.5 角色與權限
+
+**權限（permission）是程式碼定義的固定集合，角色（role）是資料。** 使用者可在「系統設定 → 角色管理」自由新增角色並勾選權限組合，但不能發明新權限——權限必須有對應的程式碼檢查點，否則新增的權限不會有任何效果。
+
+#### 權限清單（程式碼定義）
+
+| 權限 | 說明 |
+| --- | --- |
+| `customer.read` / `customer.write` | 客戶資料檢視 / 編輯 |
+| `project.read` / `project.write` | 專案檢視 / 編輯 |
+| `quotation.read` / `quotation.write` | 報價單檢視 / 編輯 |
+| `quotation.approve` | 核准報價單 |
+| `quotation.cost.read` | **檢視成本與毛利**（G1 要求的敏感資料控管） |
+| `contract.read` / `contract.write` | 合約檢視 / 編輯 |
+| `report.read` | 報表 |
+| `user.manage` | 帳號管理 |
+| `settings.manage` | 公司資料、角色、單號規則等系統設定 |
+
+第二階段新增 `material.*`、`purchase_order.*`、`inventory.*`；第三階段新增 `assignment.*`、`labor.*`。新增權限需同時新增程式碼檢查點，屬於開發工作而非設定。
+
+#### 預設角色（`is_system = true`，不可刪除，但權限可調整）
+
+| 角色 | code | 權限 |
+| --- | --- | --- |
+| 系統管理員 | `admin` | 全部 |
+| 經營主管 | `manager` | 全部（含 `quotation.approve` 與 `quotation.cost.read`），不含 `user.manage` |
+| 業務 | `sales` | `customer.*`、`project.*`、`quotation.read/write`、`contract.read`。**不含 `quotation.cost.read`** |
+| 專案經理 | `pm` | `project.*`、`quotation.read`、`quotation.cost.read`、`contract.*` |
+| 會計 | `accounting` | 各項 `read` + `quotation.cost.read` + `report.read` |
+| 唯讀 | `viewer` | 各項 `read`，不含成本 |
+
+業務預設看不到成本是刻意的：報價由業務開立，成本由主管與會計掌握，這是多數工程公司的實務分工。若貴公司業務需要看成本，在角色管理勾選即可，不需改程式碼。
+
+#### 成本欄位的可見性
+
+`quotation.cost.read` 的檢查發生在 **API 的 DTO 序列化階段**，無此權限者回應中根本不含 `unit_cost` 欄位，不是前端隱藏。前端隱藏等於把資料送到瀏覽器再假裝看不到，開發者工具一開就破功。
+
+#### 授權判斷的位置
+
+授權為業務規則，放在 `acms-domain/src/authz.rs`（純函式：輸入角色權限集合與資源屬性，輸出可否）。`auth/` 模組只保留 session 與密碼雜湊等機制。
+
 ### 單號產生
 
 `customers.code`、`projects.code`、`quotations.quote_no`、`contracts.contract_no` 皆為人類可讀單號，格式含年度（如 `P2026-001`）。
@@ -473,6 +546,19 @@ REST + JSON，路徑 `/api/v1/...`。以 `utoipa` 從 Rust 型別產生 OpenAPI�
 - 第一階段 PDF 即時產生並回傳，不落地。第二階段若要 Email 寄送或存檔，再決定儲存位置（屆時一併處理施工照片的儲存，見第 9 節）
 
 版面需求：每列小計顯示整數元（與第 3 節進位規則一致）、顯示未稅／稅額／含稅三個數字、含公司抬頭與報價有效期限。
+
+### 公司抬頭、Logo 與條款的填寫位置
+
+三者皆存於 `company_profile` 單列表，由**「系統設定 → 公司資料」**頁面填寫，改動後下一次產生的 PDF 立即生效，不需重新建置映像。
+
+| 欄位 | 內容 | 初始值 |
+| --- | --- | --- |
+| `name` | 公司抬頭 | 空白，待使用者填寫 |
+| `tax_id` / `phone` / `fax` / `email` / `address` | 表頭聯絡資訊 | 空白 |
+| `logo_svg` | Logo 的 SVG 原始碼 | migration 寫入 `assets/brand/` 選定的方案 |
+| `quote_terms` | 報價單條款 | migration 寫入 `docs/quotation-terms.md` 的範本 |
+
+Logo 存 SVG 原始碼而非檔案路徑：網頁與 typst 可共用同一份，且使用者日後換 logo 只需貼上新的 SVG，不必動容器內的檔案。
 
 ## 7. 維運與可觀測性
 
@@ -594,5 +680,6 @@ web/src/
 ## 12. 待確認
 
 1. typst 中文字型的授權是否允許散布於容器映像（思源黑體為 SIL OFL，可）
-2. 報價單版面的公司抬頭、Logo、條款文字等內容
-3. `user_roles` 的實際角色清單（業務、專案經理、管理員、會計？）
+2. 公司抬頭與聯絡資訊由使用者自行於系統設定填寫（設計已完成，見第 6 節）
+3. Logo 採用方案 A（彎頭）或方案 C（管網），見 `assets/brand/`
+4. 報價單條款範本是否需請會計師或律師檢視（見 `docs/quotation-terms.md`）
