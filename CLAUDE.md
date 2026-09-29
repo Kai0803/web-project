@@ -37,7 +37,20 @@
 | 資料庫 | PostgreSQL（容器化） | 已確認。排程衝突可用 exclusion constraint 於 DB 層強制；jsonb 供應商規格；DDL 可交易；sqlx 編譯期查詢檢查最成熟 |
 | 部署 | Podman，`podman kube play` | 本機開發測試，後續移至自架 server |
 
-尚未定案：Rust web 框架（建議 axum + sqlx + tower-http）、Vue component library、repo 目錄結構。這些在 G2 設計關卡定案後回填此表。
+G2 定案的其餘選型：
+
+| 項目 | 選型 |
+| --- | --- |
+| Web 框架 | axum + tower-http |
+| 資料庫存取 | sqlx（編譯期查詢檢查） |
+| Crate 結構 | workspace 兩個 crate：`acms-domain`（純邏輯，不含 sqlx / axum / serde）與 `acms-app` |
+| API 契約 | utoipa 由 Rust 型別產生 OpenAPI，前端據此產生 TS 型別，CI 檢查漂移 |
+| 認證 | Cookie session 存 Postgres，`SameSite=Strict` + Origin 檢查 + 自訂 header |
+| 報價單輸出 | typst 伺服器端產生 PDF |
+
+尚未定案：Vue component library。
+
+完整設計見 [docs/g2-design.md](docs/g2-design.md)。
 
 ## 開發流程
 
@@ -45,7 +58,7 @@
 
 進 G4 審查前先自行跑過 `cargo clippy`、`cargo test`、`tsc --noEmit`。
 
-**目前進度**：第一階段 G2（設計）。G1 已確認，產物於 `docs/`。
+**目前進度**：第一階段 G2（設計）已完成審查修正，待使用者確認後進 G3。產物於 `docs/`。
 
 ## `.claude/` 的同步注意事項
 
