@@ -6,3 +6,4 @@ data/*.sqlite-journal
 
 # Rust
 /target
+/.sqlx

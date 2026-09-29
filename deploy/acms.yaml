@@ -1,0 +1,162 @@
+# 空調配管工程管理系統 — 本機開發部署
+#
+#   podman build -t acms-app:latest .
+#   podman kube play deploy/acms.yaml
+#
+# 正式環境請改掉下方 Secret 的兩個值，並移除 hostPort 改用 Service。
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: acms-pgdata
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: acms-backup
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 5Gi
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: acms-secret
+type: Opaque
+stringData:
+  # 開發用預設值。正式環境請替換：openssl rand -base64 32
+  postgres-password: dev-only-change-me
+  database-url: postgres://acms:dev-only-change-me@127.0.0.1:5432/acms
+---
+apiVersion: v1
+kind: Pod
+metadata:
+  name: acms
+  labels:
+    app: acms
+spec:
+  restartPolicy: Always
+  containers:
+    # ---------------- 資料庫 ----------------
+    - name: postgres
+      image: docker.io/library/postgres:17-alpine
+      env:
+        - name: POSTGRES_USER
+          value: acms
+        - name: POSTGRES_DB
+          value: acms
+        - name: POSTGRES_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: acms-secret
+              key: postgres-password
+        # 預設的 PGDATA 是 volume 掛載點本身，某些檔案系統會因 lost+found 而拒絕初始化
+        - name: PGDATA
+          value: /var/lib/postgresql/data/pgdata
+      volumeMounts:
+        - name: pgdata
+          mountPath: /var/lib/postgresql/data
+      readinessProbe:
+        exec:
+          command: ["pg_isready", "-U", "acms", "-d", "acms"]
+        initialDelaySeconds: 3
+        periodSeconds: 10
+      resources:
+        requests:
+          memory: 256Mi
+          cpu: 100m
+        limits:
+          memory: 1Gi
+
+    # ---------------- 應用程式 ----------------
+    - name: app
+      image: localhost/acms-app:latest
+      imagePullPolicy: Never
+      ports:
+        - containerPort: 8080
+          hostPort: 8080
+      env:
+        - name: PORT
+          value: "8080"
+        - name: LOG_FORMAT
+          value: json
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: acms-secret
+              key: database-url
+        # 本機以 HTTP 提供服務，正式環境走 HTTPS 時改為 true
+        - name: COOKIE_SECURE
+          value: "false"
+        - name: TRUST_PROXY
+          value: "false"
+      # 探測走 binary 自己的 healthcheck 子指令：映像內沒有 curl，
+      # 而 podman 會把 httpGet 轉譯成 curl 指令。
+      readinessProbe:
+        exec:
+          command: ["acms-app", "healthcheck"]
+        initialDelaySeconds: 5
+        periodSeconds: 10
+      livenessProbe:
+        exec:
+          command: ["acms-app", "healthcheck"]
+        initialDelaySeconds: 20
+        periodSeconds: 30
+      resources:
+        requests:
+          memory: 128Mi
+          cpu: 100m
+        limits:
+          memory: 512Mi
+
+    # ---------------- 每日備份 ----------------
+    # G1 要求每日備份、可接受遺失上限 24 小時。
+    # 單一 PVC 損毀即全損，因此 dump 至獨立的 volume。
+    - name: backup
+      image: docker.io/library/postgres:17-alpine
+      env:
+        - name: PGPASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: acms-secret
+              key: postgres-password
+      command:
+        - /bin/sh
+        - -c
+        - |
+          while true; do
+            sleep 86400
+            stamp=$(date +%Y%m%d-%H%M%S)
+            if pg_dump -h 127.0.0.1 -U acms -d acms -F c \
+                 -f "/backup/acms-${stamp}.dump" 2>/tmp/err; then
+              echo "backup ok: acms-${stamp}.dump"
+              # 保留最近 14 份
+              ls -1t /backup/acms-*.dump | tail -n +15 | xargs -r rm --
+            else
+              echo "backup FAILED: $(cat /tmp/err)" >&2
+            fi
+          done
+      volumeMounts:
+        - name: backup
+          mountPath: /backup
+      resources:
+        requests:
+          memory: 64Mi
+          cpu: 50m
+        limits:
+          memory: 256Mi
+
+  volumes:
+    - name: pgdata
+      persistentVolumeClaim:
+        claimName: acms-pgdata
+    - name: backup
+      persistentVolumeClaim:
+        claimName: acms-backup
