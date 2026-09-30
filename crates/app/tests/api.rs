@@ -639,3 +639,333 @@ fn openapi_declares_money_as_strings() {
         "核准端點應出現在規格中"
     );
 }
+
+// ==================== 帳號管理 ====================
+
+#[sqlx::test]
+async fn admin_can_create_a_user_who_can_then_log_in(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (status, created) = send(
+        &router,
+        json_body(
+            authed("POST", "/api/v1/users", &cookie),
+            json!({
+                "username": "wang",
+                "password": "wang-pw-2026",
+                "display_name": "王師傅",
+                "roles": ["sales"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "建立帳號失敗：{created}");
+    assert_eq!(created["roles"][0], "sales");
+
+    // 新帳號可實際登入
+    let (status, _) = send(
+        &router,
+        json_body(
+            request("POST", "/api/v1/auth/login"),
+            json!({ "username": "wang", "password": "wang-pw-2026" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT, "新建的帳號應可登入");
+}
+
+#[sqlx::test]
+async fn short_passwords_are_refused(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (status, body) = send(
+        &router,
+        json_body(
+            authed("POST", "/api/v1/users", &cookie),
+            json!({ "username": "x", "password": "short", "display_name": "x", "roles": [] }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert!(body["error"]["fields"]["password"].is_string());
+}
+
+#[sqlx::test]
+async fn unknown_roles_are_refused_with_a_readable_error(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (status, body) = send(
+        &router,
+        json_body(
+            authed("POST", "/api/v1/users", &cookie),
+            json!({
+                "username": "y", "password": "long-enough-pw",
+                "display_name": "y", "roles": ["wizard"]
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "應為驗證錯誤而非 500");
+    assert_eq!(body["error"]["fields"]["roles"], "含未知的角色代碼");
+}
+
+#[sqlx::test]
+async fn duplicate_usernames_return_409(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let body = json!({
+        "username": "dup", "password": "long-enough-pw",
+        "display_name": "重複", "roles": []
+    });
+    send(
+        &router,
+        json_body(authed("POST", "/api/v1/users", &cookie), body.clone()),
+    )
+    .await;
+    let (status, _) = send(
+        &router,
+        json_body(authed("POST", "/api/v1/users", &cookie), body),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CONFLICT);
+}
+
+#[sqlx::test]
+async fn sales_cannot_manage_users(pool: PgPool) {
+    let router = setup(&pool, &["sales"]).await;
+    let cookie = login(&router).await;
+
+    let (status, _) = send(
+        &router,
+        authed("GET", "/api/v1/users", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+/// 停用帳號或改密碼時必須撤銷既有 session，否則對方仍能繼續操作。
+#[sqlx::test]
+async fn deactivating_a_user_revokes_their_session(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let admin_cookie = login(&router).await;
+
+    let (_, created) = send(
+        &router,
+        json_body(
+            authed("POST", "/api/v1/users", &admin_cookie),
+            json!({
+                "username": "temp", "password": "temp-pw-2026",
+                "display_name": "臨時", "roles": ["viewer"]
+            }),
+        ),
+    )
+    .await;
+
+    // 該使用者登入
+    let response = router
+        .clone()
+        .oneshot(json_body(
+            request("POST", "/api/v1/auth/login"),
+            json!({ "username": "temp", "password": "temp-pw-2026" }),
+        ))
+        .await
+        .unwrap();
+    let their_cookie = response
+        .headers()
+        .get(header::SET_COOKIE)
+        .unwrap()
+        .to_str()
+        .unwrap()
+        .split(';')
+        .next()
+        .unwrap()
+        .to_owned();
+
+    let (status, _) = send(
+        &router,
+        authed("GET", "/api/v1/auth/me", &their_cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // 管理員停用該帳號
+    let (status, _) = send(
+        &router,
+        json_body(
+            authed(
+                "PATCH",
+                &format!("/api/v1/users/{}", created["id"]),
+                &admin_cookie,
+            ),
+            json!({ "is_active": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (status, _) = send(
+        &router,
+        authed("GET", "/api/v1/auth/me", &their_cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::UNAUTHORIZED,
+        "停用後既有 session 應失效"
+    );
+}
+
+/// 停用自己會把自己鎖在系統外，而且可能是最後一個管理員。
+#[sqlx::test]
+async fn admin_cannot_deactivate_themselves(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (_, me) = send(
+        &router,
+        authed("GET", "/api/v1/auth/me", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+
+    let (status, body) = send(
+        &router,
+        json_body(
+            authed("PATCH", &format!("/api/v1/users/{}", me["id"]), &cookie),
+            json!({ "is_active": false }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["fields"]["is_active"], "不可停用自己");
+}
+
+// ==================== 公司資料 ====================
+
+#[sqlx::test]
+async fn company_profile_is_readable_by_anyone_but_writable_only_by_settings_manager(pool: PgPool) {
+    let router = setup(&pool, &["sales"]).await;
+    let cookie = login(&router).await;
+
+    // 列印報價單需要抬頭，因此任何登入者皆可讀
+    let (status, profile) = send(
+        &router,
+        authed("GET", "/api/v1/company", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(profile["quote_terms"]
+        .as_str()
+        .unwrap()
+        .contains("報價有效期限"));
+
+    // 但業務不能改
+    let (status, _) = send(
+        &router,
+        json_body(
+            authed("PUT", "/api/v1/company", &cookie),
+            json!({ "name": "亂改", "quote_terms": "" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+}
+
+#[sqlx::test]
+async fn admin_can_fill_in_the_company_header(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (status, _) = send(
+        &router,
+        json_body(
+            authed("PUT", "/api/v1/company", &cookie),
+            json!({
+                "name": "〇〇空調工程有限公司",
+                "tax_id": "12345678",
+                "phone": "02-1234-5678",
+                "quote_terms": "一、報價有效期限三十日。"
+            }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let (_, profile) = send(
+        &router,
+        authed("GET", "/api/v1/company", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(profile["name"], "〇〇空調工程有限公司");
+    assert_eq!(profile["tax_id"], "12345678");
+}
+
+#[sqlx::test]
+async fn permissions_endpoint_lists_every_defined_permission(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (status, body) = send(
+        &router,
+        authed("GET", "/api/v1/permissions", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let perms: Vec<&str> = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(perms.contains(&"quotation.cost.read"));
+    assert!(perms.contains(&"user.manage"));
+}
+
+#[sqlx::test]
+async fn roles_endpoint_reports_seeded_roles_with_their_permissions(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (status, body) = send(
+        &router,
+        authed("GET", "/api/v1/roles", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let roles = body.as_array().unwrap();
+    assert_eq!(roles.len(), 6);
+
+    let sales = roles.iter().find(|r| r["code"] == "sales").unwrap();
+    assert_eq!(sales["is_system"], true);
+    let perms: Vec<&str> = sales["permissions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|v| v.as_str().unwrap())
+        .collect();
+    assert!(
+        !perms.contains(&"quotation.cost.read"),
+        "業務預設不含成本權限"
+    );
+}

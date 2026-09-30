@@ -107,16 +107,16 @@ pub async fn replace_items(
 macro_rules! transition_handler {
     ($name:ident, $svc:ident, $path:literal, $desc:literal) => {
         #[utoipa::path(
-                    post, path = $path,
-                    params(("id" = i64, Path)),
-                    responses(
-                        (status = 200, body = QuotationResponse, description = $desc),
-                        (status = 403, description = "權限不足"),
-                        (status = 409, description = "已有核准版本或資料已被他人修改"),
-                        (status = 422, description = "狀態轉換不合法"),
-                    ),
-                    tag = "quotations",
-                )]
+                            post, path = $path,
+                            params(("id" = i64, Path)),
+                            responses(
+                                (status = 200, body = QuotationResponse, description = $desc),
+                                (status = 403, description = "權限不足"),
+                                (status = 409, description = "已有核准版本或資料已被他人修改"),
+                                (status = 422, description = "狀態轉換不合法"),
+                            ),
+                            tag = "quotations",
+                        )]
         pub async fn $name(
             State(state): State<AppState>,
             CurrentUser(user): CurrentUser,

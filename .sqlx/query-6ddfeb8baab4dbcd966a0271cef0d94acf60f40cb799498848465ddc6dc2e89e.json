@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE users SET\n          display_name  = COALESCE($2, display_name),\n          is_active     = COALESCE($3, is_active),\n          password_hash = COALESCE($4, password_hash)\n        WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Bool",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "6ddfeb8baab4dbcd966a0271cef0d94acf60f40cb799498848465ddc6dc2e89e"
+}

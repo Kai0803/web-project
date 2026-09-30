@@ -79,5 +79,20 @@ pub fn routes(state: AppState) -> Router {
         )
         // 合約
         .route("/api/v1/contracts/{id}", get(handlers::contracts::detail))
+        // 帳號與系統設定
+        .route(
+            "/api/v1/users",
+            get(handlers::admin::list_users).post(handlers::admin::create_user),
+        )
+        .route("/api/v1/users/{id}", patch(handlers::admin::update_user))
+        .route("/api/v1/roles", get(handlers::admin::list_roles))
+        .route(
+            "/api/v1/permissions",
+            get(handlers::admin::list_permissions),
+        )
+        .route(
+            "/api/v1/company",
+            get(handlers::admin::get_company).put(handlers::admin::update_company),
+        )
         .with_state(state)
 }

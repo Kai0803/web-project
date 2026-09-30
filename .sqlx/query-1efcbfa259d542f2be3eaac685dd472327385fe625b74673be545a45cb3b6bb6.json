@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.id, u.username, u.display_name, u.is_active,\n               COALESCE(array_agg(ur.role_code) FILTER (WHERE ur.role_code IS NOT NULL),\n                        ARRAY[]::text[]) AS \"roles!: Vec<String>\"\n        FROM users u\n        LEFT JOIN user_roles ur ON ur.user_id = u.id\n        WHERE u.kind = 'staff'\n        GROUP BY u.id\n        ORDER BY u.username, u.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "roles!: Vec<String>",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      null
+    ]
+  },
+  "hash": "1efcbfa259d542f2be3eaac685dd472327385fe625b74673be545a45cb3b6bb6"
+}

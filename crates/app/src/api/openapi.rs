@@ -45,6 +45,13 @@ use super::handlers;
         handlers::quotations::new_version,
         handlers::contracts::create_from_quotation,
         handlers::contracts::detail,
+        handlers::admin::list_users,
+        handlers::admin::create_user,
+        handlers::admin::update_user,
+        handlers::admin::list_roles,
+        handlers::admin::list_permissions,
+        handlers::admin::get_company,
+        handlers::admin::update_company,
     ),
     components(schemas(
         dto::LoginRequest,
@@ -62,6 +69,11 @@ use super::handlers;
         dto::ReplaceItemsRequest,
         dto::ContractResponse,
         dto::CreateContractRequest,
+        handlers::admin::UserSummary,
+        handlers::admin::CreateUserRequest,
+        handlers::admin::UpdateUserRequest,
+        handlers::admin::RoleSummary,
+        handlers::admin::CompanyProfileBody,
         error::ErrorCode,
         error::ErrorBody,
         error::ErrorResponse,
@@ -72,6 +84,7 @@ use super::handlers;
         (name = "projects", description = "專案 / 案場"),
         (name = "quotations", description = "報價單"),
         (name = "contracts", description = "合約"),
+        (name = "admin", description = "帳號、角色與系統設定"),
     ),
 )]
 pub struct ApiDoc;

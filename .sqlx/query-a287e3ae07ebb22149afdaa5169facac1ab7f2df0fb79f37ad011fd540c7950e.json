@@ -1,0 +1,44 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT r.code, r.name, r.description, r.is_system,\n               COALESCE(array_agg(rp.permission) FILTER (WHERE rp.permission IS NOT NULL),\n                        ARRAY[]::text[]) AS \"permissions!: Vec<String>\"\n        FROM roles r\n        LEFT JOIN role_permissions rp ON rp.role_code = r.code\n        GROUP BY r.code\n        ORDER BY r.code\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 1,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "description",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "is_system",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 4,
+        "name": "permissions!: Vec<String>",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      false,
+      false,
+      true,
+      false,
+      null
+    ]
+  },
+  "hash": "a287e3ae07ebb22149afdaa5169facac1ab7f2df0fb79f37ad011fd540c7950e"
+}
