@@ -5,12 +5,16 @@
 //!
 //! 層次分工：
 //!
+//! - [`api`] — HTTP handler、DTO、OpenAPI
 //! - [`db`] — sqlx 查詢。函式收 executor，交易由上層開啟
 //! - [`service`] — use case：交易邊界、編排、授權決策
+//! - [`auth`] — 密碼雜湊與 session（機制；授權政策在 `acms_domain::authz`）
 //! - [`config`] — 環境變數讀取與啟動驗證
 //!
 //! 業務規則在 `acms-domain`，那裡沒有 I/O，測試不需要資料庫。
 
+pub mod api;
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod service;

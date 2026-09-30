@@ -3,7 +3,7 @@
 //! 此處僅組裝：讀設定、建連線池、跑 migration、掛路由、啟動。
 //! 業務規則在 `acms-domain`，交易編排在 `service`，資料庫存取在 `db`。
 
-use acms_app::{config, db};
+use acms_app::{api, auth, config, db};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;
@@ -70,10 +70,21 @@ async fn run() -> anyhow::Result<()> {
 
     db::migrate(&pool).await?;
 
+    // 啟動時清一次過期 session。存量小，不需要排程。
+    match auth::purge_expired(&pool).await {
+        Ok(n) if n > 0 => info!(count = n, "已清除過期 session"),
+        Ok(_) => {}
+        Err(err) => error!(error = %err, "清除過期 session 失敗，不影響啟動"),
+    }
+
     let app = Router::new()
         .route("/healthz", get(healthz))
-        .layer(TraceLayer::new_for_http())
-        .with_state(AppState { pool });
+        .with_state(AppState { pool: pool.clone() })
+        .merge(api::routes(api::AppState {
+            pool,
+            cookie_secure: config.cookie_secure,
+        }))
+        .layer(TraceLayer::new_for_http());
 
     let addr = format!("0.0.0.0:{}", config.port);
     let listener = tokio::net::TcpListener::bind(&addr).await?;

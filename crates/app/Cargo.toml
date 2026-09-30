@@ -9,8 +9,10 @@ license.workspace = true
 acms-domain = { path = "../domain" }
 
 anyhow = "1"
+argon2 = "0.5"
 axum = "0.8"
-rust_decimal = { workspace = true }
+axum-extra = { version = "0.10", features = ["cookie"] }
+rust_decimal = { workspace = true, features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sqlx = { version = "0.8", default-features = false, features = [
@@ -30,7 +32,9 @@ tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
 tower-http = { version = "0.6", features = ["trace", "request-id", "util"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
-uuid = { version = "1", features = ["v4"] }
+utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
+uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }
+tower = { version = "0.5", features = ["util"] }
