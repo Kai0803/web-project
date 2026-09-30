@@ -1,0 +1,282 @@
+/* 設計語彙。色票取自品牌識別：石墨藍與銅。 */
+:root {
+  --ink: #1f3a4d;
+  --ink-soft: #2e4e63;
+  --copper: #b87333;
+  --copper-soft: #c98a4f;
+
+  --bg: #f4f6f7;
+  --surface: #ffffff;
+  --line: #dde4e8;
+  --line-soft: #eef2f4;
+
+  --text: #16232c;
+  --text-muted: #5f7181;
+  --text-faint: #8a9aa6;
+
+  --ok: #1f7a4d;
+  --warn: #9a6114;
+  --danger: #a32c2c;
+
+  --radius: 10px;
+  --radius-sm: 6px;
+  --shadow: 0 1px 2px rgb(31 58 77 / 6%), 0 4px 16px rgb(31 58 77 / 6%);
+
+  --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans TC',
+    'PingFang TC', 'Microsoft JhengHei', sans-serif;
+  /* 金額與編號用等寬，數字才對得齊 */
+  --mono: ui-monospace, 'SF Mono', 'Cascadia Mono', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+html, body, #app { height: 100%; }
+
+body {
+  margin: 0;
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 650; letter-spacing: -0.01em; }
+h1 { font-size: 1.5rem; }
+h2 { font-size: 1.15rem; }
+h3 { font-size: 1rem; }
+
+a { color: var(--ink); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* ---------- 版面 ---------- */
+
+.shell { display: flex; min-height: 100%; }
+
+.sidebar {
+  width: 216px;
+  flex: 0 0 216px;
+  background: var(--ink);
+  color: #fff;
+  padding: 20px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 8px 20px;
+  color: #fff;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+.brand:hover { text-decoration: none; }
+.brand svg { width: 26px; height: 26px; flex: none; }
+
+.nav-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  color: #b9c9d4;
+  font-size: 0.93rem;
+}
+.nav-link:hover { background: var(--ink-soft); color: #fff; text-decoration: none; }
+.nav-link.active { background: var(--ink-soft); color: #fff; font-weight: 600; }
+
+.sidebar-foot {
+  margin-top: auto;
+  padding-top: 16px;
+  border-top: 1px solid rgb(255 255 255 / 12%);
+  font-size: 0.85rem;
+  color: #9fb2bf;
+}
+
+.main { flex: 1; min-width: 0; padding: 28px 32px 64px; }
+
+.page-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.page-head p { margin: 4px 0 0; color: var(--text-muted); font-size: 0.9rem; }
+
+/* ---------- 卡片與表格 ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+.card + .card { margin-top: 18px; }
+.card-head {
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--line-soft);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.card-body { padding: 18px; }
+
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 10px 18px; text-align: left; }
+th {
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--line);
+}
+td { border-bottom: 1px solid var(--line-soft); }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover { background: #fafcfd; }
+.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.code { font-family: var(--mono); font-size: 0.88rem; color: var(--text-muted); }
+
+/* ---------- 表單 ---------- */
+
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.field > label { font-size: 0.85rem; font-weight: 600; color: var(--text-muted); }
+.field .hint { font-size: 0.8rem; color: var(--text-faint); }
+.field .error { font-size: 0.82rem; color: var(--danger); }
+
+input, select, textarea {
+  font: inherit;
+  color: inherit;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  width: 100%;
+}
+input:focus, select:focus, textarea:focus {
+  outline: 2px solid color-mix(in srgb, var(--ink) 30%, transparent);
+  outline-offset: 1px;
+  border-color: var(--ink);
+}
+input[aria-invalid='true'] { border-color: var(--danger); }
+input.num, td input.num { text-align: right; font-family: var(--mono); }
+
+.row { display: flex; gap: 12px; flex-wrap: wrap; }
+.row > * { flex: 1 1 200px; }
+
+/* ---------- 按鈕 ---------- */
+
+.btn {
+  font: inherit;
+  font-weight: 560;
+  padding: 8px 15px;
+  border-radius: var(--radius-sm);
+  border: 1px solid transparent;
+  background: var(--ink);
+  color: #fff;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover:not(:disabled) { background: var(--ink-soft); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.btn.ghost { background: transparent; color: var(--ink); border-color: var(--line); }
+.btn.ghost:hover:not(:disabled) { background: var(--line-soft); }
+.btn.copper { background: var(--copper); }
+.btn.copper:hover:not(:disabled) { background: var(--copper-soft); }
+.btn.danger { background: transparent; color: var(--danger); border-color: #e4c4c4; }
+.btn.danger:hover:not(:disabled) { background: #fdf4f4; }
+.btn.sm { padding: 5px 10px; font-size: 0.86rem; }
+.btn-row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+
+/* ---------- 狀態標籤 ---------- */
+
+.tag {
+  display: inline-block;
+  padding: 2px 9px;
+  border-radius: 999px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  border: 1px solid;
+}
+.tag.draft      { color: var(--text-muted); border-color: var(--line); background: var(--line-soft); }
+.tag.pending    { color: var(--warn); border-color: #e8d4ac; background: #fdf7ea; }
+.tag.approved   { color: var(--ok); border-color: #bcdcc9; background: #f0f8f3; }
+.tag.rejected   { color: var(--danger); border-color: #e4c4c4; background: #fdf4f4; }
+.tag.superseded { color: var(--text-faint); border-color: var(--line); background: #fff; }
+.tag.lead, .tag.quoting { color: var(--ink); border-color: #c8d8e2; background: #f2f7fa; }
+.tag.contracted { color: var(--copper); border-color: #e6cdb0; background: #fdf7f0; }
+.tag.closed, .tag.cancelled { color: var(--text-faint); border-color: var(--line); background: #fff; }
+
+/* ---------- 訊息 ---------- */
+
+.alert {
+  padding: 11px 14px;
+  border-radius: var(--radius-sm);
+  border: 1px solid;
+  font-size: 0.9rem;
+  margin-bottom: 14px;
+}
+.alert.error { color: var(--danger); border-color: #e4c4c4; background: #fdf4f4; }
+.alert.ok    { color: var(--ok); border-color: #bcdcc9; background: #f0f8f3; }
+.alert.info  { color: var(--ink); border-color: #c8d8e2; background: #f2f7fa; }
+
+.empty { padding: 40px 18px; text-align: center; color: var(--text-faint); }
+.muted { color: var(--text-muted); }
+.faint { color: var(--text-faint); font-size: 0.86rem; }
+
+/* ---------- 登入 ---------- */
+
+.login-wrap {
+  min-height: 100%;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: linear-gradient(160deg, var(--ink) 0%, #16303f 100%);
+}
+.login-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--surface);
+  border-radius: var(--radius);
+  padding: 30px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 22%);
+}
+.login-card .brand { color: var(--ink); justify-content: center; padding-top: 0; }
+
+/* ---------- 合計區 ---------- */
+
+.totals {
+  margin-left: auto;
+  width: min(320px, 100%);
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 6px 20px;
+  font-variant-numeric: tabular-nums;
+}
+.totals dt { color: var(--text-muted); font-size: 0.9rem; }
+.totals dd { margin: 0; text-align: right; font-family: var(--mono); }
+.totals .grand { font-size: 1.15rem; font-weight: 650; color: var(--ink); }
+.totals .grand-label { font-weight: 650; color: var(--text); align-self: center; }
+
+/* ---------- 手機 ---------- */
+
+@media (max-width: 760px) {
+  .shell { flex-direction: column; }
+  .sidebar {
+    width: auto;
+    flex: none;
+    flex-direction: row;
+    align-items: center;
+    gap: 2px;
+    overflow-x: auto;
+    padding: 10px 12px;
+  }
+  .brand { padding: 0 12px 0 4px; }
+  .sidebar-foot { display: none; }
+  .main { padding: 18px 14px 48px; }
+  th, td { padding: 9px 12px; }
+}

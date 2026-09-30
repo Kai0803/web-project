@@ -9,3 +9,7 @@ data/*.sqlite-journal
 
 # 本機開發用，含資料庫連線字串
 .env
+
+# 前端
+/web/node_modules
+/web/dist

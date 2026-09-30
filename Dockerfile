@@ -1,4 +1,18 @@
 # syntax=docker/dockerfile:1
+
+# ---------- 前端 ----------
+# 型別由後端的 OpenAPI 規格產生，因此 schema.d.ts 已在版控中。
+# 這一層只負責編譯，不重新產生型別——那需要跑後端 binary。
+FROM node:24-slim AS web
+
+WORKDIR /web
+COPY web/package.json web/package-lock.json ./
+RUN npm ci
+COPY web/ ./
+RUN npm run build
+
+
+# ---------- 後端 ----------
 FROM rust:1.94-slim-bookworm AS builder
 
 WORKDIR /build
@@ -36,8 +50,10 @@ RUN apt-get update \
  && useradd --system --create-home --uid 10001 acms
 
 COPY --from=builder /build/target/release/acms-app /usr/local/bin/acms-app
+COPY --from=web /web/dist /srv/web
 
 USER acms
+ENV STATIC_DIR=/srv/web
 ENV PORT=8080
 EXPOSE 8080
 

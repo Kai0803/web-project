@@ -19,6 +19,8 @@ pub struct Config {
     /// 等待資料庫就緒的上限。容器啟動順序不保證，因此以重試處理。
     pub db_connect_timeout: Duration,
     pub db_max_connections: u32,
+    /// 前端建置產物的位置。容器內為映像中的固定路徑，開發時指向 web/dist。
+    pub static_dir: std::path::PathBuf,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -39,6 +41,9 @@ impl Config {
             trust_proxy: flag("TRUST_PROXY"),
             db_connect_timeout: Duration::from_secs(parse_or("DB_CONNECT_TIMEOUT_SECS", 30)?),
             db_max_connections: parse_or("DB_MAX_CONNECTIONS", 10)?,
+            static_dir: std::env::var("STATIC_DIR")
+                .unwrap_or_else(|_| "web/dist".to_owned())
+                .into(),
         })
     }
 }

@@ -6,6 +6,7 @@
 use acms_app::{api, auth, config, db};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
 use sqlx::PgPool;
+use tower_http::services::{ServeDir, ServeFile};
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -20,6 +21,38 @@ async fn main() {
     // 容器 probe 用。執行映像內既有的 binary，不必為了健康檢查在映像裡裝 curl。
     if std::env::args().nth(1).as_deref() == Some("healthcheck") {
         std::process::exit(i32::from(!healthcheck().await));
+    }
+
+    // 匯出 OpenAPI 規格。前端的 TypeScript 型別由此產生，
+    // 契約的單一事實來源因而是 Rust 的型別定義。
+    if std::env::args().nth(1).as_deref() == Some("openapi") {
+        use utoipa::OpenApi;
+        match serde_json::to_string_pretty(&api::ApiDoc::openapi()) {
+            Ok(spec) => println!("{spec}"),
+            Err(err) => {
+                eprintln!("無法產生 OpenAPI 規格：{err}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
+
+    // 建立第一個管理員帳號。
+    //
+    // 沒有這個指令，全新部署的系統無法登入——而在 migration 裡塞一組
+    // 預設密碼等於把它公告在原始碼裡。這條路徑只在有人能執行容器指令時可用。
+    if std::env::args().nth(1).as_deref() == Some("create-admin") {
+        init_tracing();
+        let args: Vec<String> = std::env::args().collect();
+        let (Some(username), Some(password)) = (args.get(2), args.get(3)) else {
+            eprintln!("用法：acms-app create-admin <帳號> <密碼>");
+            std::process::exit(2);
+        };
+        if let Err(err) = create_admin(username, password).await {
+            eprintln!("建立失敗：{err:#}");
+            std::process::exit(1);
+        }
+        return;
     }
 
     init_tracing();
@@ -57,6 +90,52 @@ async fn healthcheck() -> bool {
     }
 }
 
+/// 建立一個帶 admin 角色的帳號。帳號已存在時只重設密碼並補上角色，
+/// 讓忘記密碼時也有一條救援路徑。
+async fn create_admin(username: &str, password: &str) -> anyhow::Result<()> {
+    const MIN_LEN: usize = 10;
+    if password.chars().count() < MIN_LEN {
+        anyhow::bail!("密碼至少需要 {MIN_LEN} 個字元");
+    }
+
+    let config = config::Config::from_env()?;
+    let pool = db::connect(&config.database_url, 2, config.db_connect_timeout).await?;
+    db::migrate(&pool).await?;
+
+    let hash = auth::hash_password(password).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+
+    let mut tx = pool.begin().await?;
+    let id = sqlx::query_scalar!(
+        r#"
+        INSERT INTO users (username, password_hash, display_name)
+        VALUES ($1, $2, $1)
+        ON CONFLICT (username) DO UPDATE SET password_hash = EXCLUDED.password_hash
+        RETURNING id
+        "#,
+        username,
+        hash,
+    )
+    .fetch_one(&mut *tx)
+    .await?;
+
+    sqlx::query!(
+        "INSERT INTO user_roles (user_id, role_code) VALUES ($1,'admin') ON CONFLICT DO NOTHING",
+        id,
+    )
+    .execute(&mut *tx)
+    .await?;
+
+    // 改密碼即撤銷既有 session，與帳號管理端點的行為一致
+    sqlx::query!("DELETE FROM sessions WHERE user_id = $1", id)
+        .execute(&mut *tx)
+        .await?;
+
+    tx.commit().await?;
+
+    info!(username, "管理員帳號已就緒");
+    Ok(())
+}
+
 async fn run() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     info!(port = config.port, "設定已載入");
@@ -84,6 +163,13 @@ async fn run() -> anyhow::Result<()> {
             pool,
             cookie_secure: config.cookie_secure,
         }))
+        // 前端由後端同源提供：省掉 CORS，也讓 cookie 認證單純。
+        // 找不到的路徑一律回 index.html，交給前端路由處理——
+        // 使用者直接開 /quotations/12 或重新整理時才不會拿到 404。
+        .fallback_service(
+            ServeDir::new(&config.static_dir)
+                .fallback(ServeFile::new(config.static_dir.join("index.html"))),
+        )
         .layer(TraceLayer::new_for_http());
 
     let addr = format!("0.0.0.0:{}", config.port);
