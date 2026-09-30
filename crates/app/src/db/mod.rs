@@ -14,6 +14,7 @@
 
 pub mod audit;
 pub mod company;
+pub mod contract;
 pub mod customer;
 pub mod numbering;
 pub mod project;

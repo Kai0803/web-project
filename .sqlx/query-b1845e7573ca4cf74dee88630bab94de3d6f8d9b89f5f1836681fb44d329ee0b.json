@@ -1,0 +1,82 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT id, public_id, project_id, quotation_id, contract_no,\n               kind::text AS \"kind!\", parent_contract_id, signed_date, total,\n               created_at, updated_at\n        FROM contracts WHERE id = $1\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "public_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "project_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "quotation_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "contract_no",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "kind!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "parent_contract_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 7,
+        "name": "signed_date",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "total",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 10,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "b1845e7573ca4cf74dee88630bab94de3d6f8d9b89f5f1836681fb44d329ee0b"
+}
