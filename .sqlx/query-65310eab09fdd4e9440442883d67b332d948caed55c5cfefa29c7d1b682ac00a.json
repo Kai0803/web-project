@@ -1,0 +1,21 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE company_profile SET\n          name = $1, tax_id = $2, phone = $3, fax = $4,\n          email = $5, address = $6, logo_svg = $7, quote_terms = $8\n        WHERE id = 1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text",
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "65310eab09fdd4e9440442883d67b332d948caed55c5cfefa29c7d1b682ac00a"
+}

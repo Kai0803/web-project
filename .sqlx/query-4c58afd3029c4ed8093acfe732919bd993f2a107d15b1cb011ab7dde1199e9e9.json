@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE quotations\n           SET subtotal = $2, tax_amount = $3, total = $4, lock_version = lock_version + 1\n         WHERE id = $1\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Numeric",
+        "Numeric",
+        "Numeric"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "4c58afd3029c4ed8093acfe732919bd993f2a107d15b1cb011ab7dde1199e9e9"
+}

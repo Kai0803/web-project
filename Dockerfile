@@ -3,9 +3,15 @@ FROM rust:1.94-slim-bookworm AS builder
 
 WORKDIR /build
 
+# sqlx 的 query! 巨集在編譯期驗證 SQL。建置容器時沒有資料庫可連，
+# 因此改讀版控中的 .sqlx 離線快取。快取與 schema 不同步時建置會失敗，
+# 這正是要的效果——它逼著 migration 與查詢一起更新。
+ENV SQLX_OFFLINE=true
+
 # 先只帶 manifest 建一次假的空專案，讓依賴編譯結果留在獨立的層。
 # 之後只改業務程式碼時，這一層可直接命中快取——Rust 依賴編譯很慢，值得這道手續。
 COPY Cargo.toml Cargo.lock ./
+COPY .sqlx .sqlx
 COPY crates/domain/Cargo.toml crates/domain/
 COPY crates/app/Cargo.toml crates/app/
 RUN mkdir -p crates/domain/src crates/app/src \

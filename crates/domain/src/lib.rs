@@ -6,6 +6,7 @@
 //!
 //! # 模組
 //!
+//! - [`entities`] — 領域實體。`db` 層一律回傳這些型別
 //! - [`money`] — 金額計算與進位。全專案唯一的進位入口
 //! - [`quotation`] — 報價單狀態機與可變性規則
 //! - [`authz`] — 權限判斷
@@ -15,11 +16,16 @@
 #![warn(missing_debug_implementations)]
 
 pub mod authz;
+pub mod entities;
 pub mod ids;
 pub mod money;
 pub mod quotation;
 
 pub use authz::{Denied, Permission, Permissions};
+pub use entities::{
+    CompanyProfile, Contract, ContractKind, Customer, CustomerContact, NewQuotationItem, Project,
+    ProjectListRow, ProjectStatus, Quotation, QuotationItem, User,
+};
 pub use ids::{
     ContractId, CustomerId, ProjectId, QuotationId, QuotationItemId, UserId, WorkItemId,
 };

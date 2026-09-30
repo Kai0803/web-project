@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE quotations\n           SET status = 'superseded', lock_version = lock_version + 1\n         WHERE quote_no = $1 AND id <> $2 AND status <> 'superseded'\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "a89368874dd16c80480c877c3b507705b512355bc1d973011778e5abb2046f9b"
+}

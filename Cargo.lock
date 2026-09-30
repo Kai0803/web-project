@@ -9,10 +9,13 @@ dependencies = [
  "acms-domain",
  "anyhow",
  "axum",
+ "rust_decimal",
+ "rust_decimal_macros",
  "serde",
  "serde_json",
  "sqlx",
  "thiserror",
+ "time",
  "tokio",
  "tower-http",
  "tracing",
@@ -27,6 +30,8 @@ dependencies = [
  "rust_decimal",
  "rust_decimal_macros",
  "thiserror",
+ "time",
+ "uuid",
 ]
 
 [[package]]

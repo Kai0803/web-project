@@ -1,0 +1,130 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO quotations (project_id, quote_no, version, tax_rate, valid_until,\n                                created_by, note)\n        VALUES ($1, $2, $3, $4, $5, $6, $7)\n        RETURNING id, public_id, project_id, quote_no, version, status::text AS \"status!\",\n                  tax_rate, valid_until, subtotal, tax_amount, total, lock_version,\n                  created_by, approved_by, approved_at, note, created_at, updated_at\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "public_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "project_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 3,
+        "name": "quote_no",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 5,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "tax_rate",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 7,
+        "name": "valid_until",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 8,
+        "name": "subtotal",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 9,
+        "name": "tax_amount",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 10,
+        "name": "total",
+        "type_info": "Numeric"
+      },
+      {
+        "ordinal": 11,
+        "name": "lock_version",
+        "type_info": "Int4"
+      },
+      {
+        "ordinal": 12,
+        "name": "created_by",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 13,
+        "name": "approved_by",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 14,
+        "name": "approved_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 15,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 16,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 17,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int4",
+        "Numeric",
+        "Date",
+        "Int8",
+        "Text"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      null,
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+      true,
+      false,
+      false
+    ]
+  },
+  "hash": "aeb7f56d061cd4d9c43356112113eb22f16e726520adc010fd5bdfc0c2fda225"
+}

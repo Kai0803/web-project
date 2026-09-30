@@ -3,9 +3,7 @@
 //! 此處僅組裝：讀設定、建連線池、跑 migration、掛路由、啟動。
 //! 業務規則在 `acms-domain`，交易編排在 `service`，資料庫存取在 `db`。
 
-mod config;
-mod db;
-
+use acms_app::{config, db};
 use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
 use sqlx::PgPool;
 use tower_http::trace::TraceLayer;

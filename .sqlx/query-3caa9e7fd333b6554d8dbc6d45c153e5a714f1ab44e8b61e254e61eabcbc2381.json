@@ -1,0 +1,102 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT p.id, p.public_id, p.code, p.customer_id, p.name, p.site_address,\n               p.status::text AS \"status!\", p.manager_id, p.expected_start, p.expected_end,\n               p.note, p.created_at, p.updated_at,\n               c.name AS customer_name\n        FROM projects p\n        JOIN customers c ON c.id = p.customer_id\n        WHERE $1::text IS NULL OR p.status::text = $1\n        ORDER BY p.created_at DESC, p.id DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "public_id",
+        "type_info": "Uuid"
+      },
+      {
+        "ordinal": 2,
+        "name": "code",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "customer_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 4,
+        "name": "name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 5,
+        "name": "site_address",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 6,
+        "name": "status!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 7,
+        "name": "manager_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 8,
+        "name": "expected_start",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 9,
+        "name": "expected_end",
+        "type_info": "Date"
+      },
+      {
+        "ordinal": 10,
+        "name": "note",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 11,
+        "name": "created_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 12,
+        "name": "updated_at",
+        "type_info": "Timestamptz"
+      },
+      {
+        "ordinal": 13,
+        "name": "customer_name",
+        "type_info": "Text"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Text",
+        "Int8",
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      null,
+      true,
+      true,
+      true,
+      true,
+      false,
+      false,
+      false
+    ]
+  },
+  "hash": "3caa9e7fd333b6554d8dbc6d45c153e5a714f1ab44e8b61e254e61eabcbc2381"
+}

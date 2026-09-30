@@ -1,0 +1,17 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        UPDATE quotations\n           SET status = ($2::text)::quotation_status,\n               approved_by = $3,\n               approved_at = CASE WHEN $3::bigint IS NULL THEN NULL ELSE now() END,\n               lock_version = lock_version + 1\n         WHERE id = $1 AND lock_version = $4\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Text",
+        "Int8",
+        "Int4"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "583bf144fcbd74c10bdf923d975682872043ffd36e0c3c02cc659035417324c7"
+}

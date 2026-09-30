@@ -9,8 +9,13 @@ license.workspace = true
 # domain 若寫 `use sqlx::...` 會編譯失敗——這是兩個 crate 切開的唯一目的，
 # 單一 crate 的 module 可見性提供不了這個保證。新增依賴前請先確認理由。
 [dependencies]
+# 三者皆為值型別，非框架型別。與 sqlx / serde 的整合由「那兩邊」的 feature
+# 提供（例如 sqlx = { features = ["rust_decimal", "time", "uuid"] }），
+# 因此 domain 不需要認識 sqlx 或 serde。
 rust_decimal = { workspace = true }
 thiserror = { workspace = true }
+time = { workspace = true }
+uuid = { workspace = true }
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }

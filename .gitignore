@@ -6,4 +6,6 @@ data/*.sqlite-journal
 
 # Rust
 /target
-/.sqlx
+
+# 本機開發用，含資料庫連線字串
+.env
