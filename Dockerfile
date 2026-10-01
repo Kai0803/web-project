@@ -22,6 +22,12 @@ WORKDIR /build
 # 這正是要的效果——它逼著 migration 與查詢一起更新。
 ENV SQLX_OFFLINE=true
 
+# 單執行緒編譯。typst-library 在 opt-level 3 下的峰值記憶體很高，
+# 平行編譯會在記憶體有限的建置機（例如預設 2GiB 的 podman machine）
+# 被 OOM killer 殺掉，錯誤訊息只有 signal: 9，不容易看出原因。
+# 代價是建置變慢，但依賴層有快取，只有第一次與改動相依時才付這個成本。
+ENV CARGO_BUILD_JOBS=1
+
 # 先只帶 manifest 建一次假的空專案，讓依賴編譯結果留在獨立的層。
 # 之後只改業務程式碼時，這一層可直接命中快取——Rust 依賴編譯很慢，值得這道手續。
 COPY Cargo.toml Cargo.lock ./
