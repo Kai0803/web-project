@@ -40,6 +40,13 @@ export DATABASE_URL='postgres://acms:devpass@localhost:5432/acms_dev'
 cargo test --workspace
 ```
 
+PDF 測試需要一個含中文字型的目錄。容器裡是 Noto CJK，macOS 上要另外指定，
+否則那兩個測試會以 `NoCjkFont` 失敗：
+
+```bash
+export FONT_DIR=/System/Library/Fonts     # macOS
+```
+
 前端：
 
 ```bash
@@ -51,8 +58,13 @@ cd web && npm install && npm run dev      # http://localhost:5173，API 轉給�
 `.sqlx` 是編譯期查詢驗證的離線快取，已納入版控。它與 schema 不同步時**容器建置會直接失敗**——這是刻意的，它逼著 migration 與查詢一起更新。
 
 ```bash
-cargo sqlx prepare --workspace
+cargo sqlx prepare --workspace -- --all-targets
 ```
+
+`--all-targets` 不能省。少了它，快取只含 `src/` 的查詢，`cargo clippy
+--all-targets` 與 `cargo test` 在沒有 `DATABASE_URL` 時會以
+`E0282 type annotations needed` 編譯失敗——而失敗的是測試檔，
+`cargo clippy --lib --bins` 仍然乾淨，所以很容易誤判為沒問題。
 
 ### 改了 API 型別之後
 
