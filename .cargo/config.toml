@@ -1,0 +1,8 @@
+# sqlx 的 query! 巨集預設會連 DATABASE_URL 驗證 SQL。改為一律讀版控中的
+# .sqlx 離線快取，讓這個 repo 在沒有資料庫的環境也能建置與檢查——
+# CI、新 clone、程式碼審查都受惠。
+#
+# 代價是改了 SQL 之後要自己跑 `cargo sqlx prepare --workspace` 重新產生快取，
+# 那一步會實際連資料庫驗證。快取與 schema 不同步時建置會失敗。
+[env]
+SQLX_OFFLINE = "true"
