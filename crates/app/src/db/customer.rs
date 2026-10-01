@@ -114,6 +114,35 @@ pub async fn find_by_code(ex: impl PgExecutor<'_>, code: &str) -> sqlx::Result<O
 
 /// 列表。`ORDER BY` 附 `id` 作為決勝鍵：排序欄位若可重複，
 /// Postgres 不保證兩次查詢的相對順序一致，使用者翻頁會看到某筆重複、另一筆消失。
+/// 下拉選單用的精簡清單：只有 id、代碼、名稱，且不分頁。
+///
+/// 刻意與 `list` 分開。選單需要的是「全部可選的客戶」，而列表需要的是
+/// 「這一頁的客戶」——用同一個端點會讓選單在客戶數超過分頁上限時
+/// 靜默漏掉選項，而症狀是「某個客戶在選單裡找不到」，極難診斷。
+/// 只取三個欄位，所以即使數千筆也遠小於一頁完整的客戶資料。
+pub async fn options(ex: impl PgExecutor<'_>) -> sqlx::Result<Vec<CustomerOption>> {
+    sqlx::query_as!(
+        CustomerOption,
+        r#"
+        SELECT id, code, name
+        FROM customers
+        WHERE is_active
+        ORDER BY code, id
+        LIMIT 5000
+        "#
+    )
+    .fetch_all(ex)
+    .await
+}
+
+/// 選單項目。刻意不含統編、電話、地址——那些在選單裡用不到。
+#[derive(Debug, Clone)]
+pub struct CustomerOption {
+    pub id: i64,
+    pub code: String,
+    pub name: String,
+}
+
 pub async fn list(ex: impl PgExecutor<'_>, page: Page) -> sqlx::Result<Vec<Customer>> {
     sqlx::query_as!(
         CustomerRow,

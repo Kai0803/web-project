@@ -21,6 +21,11 @@ use sqlx::PgPool;
 pub struct AppState {
     pub pool: PgPool,
     pub cookie_secure: bool,
+    /// 預期的前端來源，例如 `https://acms.example.com`。
+    ///
+    /// CSRF 的來源比對以此為準。`None` 時退回與請求自帶的 `Host` 比對，
+    /// 那只適用於本機直連——詳見 `CsrfGuard`。
+    pub public_origin: Option<String>,
 }
 
 /// 掛載所有 `/api/v1` 路由。
@@ -34,6 +39,12 @@ pub fn routes(state: AppState) -> Router {
         .route(
             "/api/v1/customers",
             get(handlers::customers::list).post(handlers::customers::create),
+        )
+        // 靜態片段的路由寫在 {id} 之前：matchit 本身是靜態優先，
+        // 但順序寫對讓讀的人不必知道這件事
+        .route(
+            "/api/v1/customers/options",
+            get(handlers::customers::options),
         )
         .route("/api/v1/customers/{id}", get(handlers::customers::detail))
         .route("/api/v1/customers/{id}", patch(handlers::customers::update))

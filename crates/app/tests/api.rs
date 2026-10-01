@@ -40,6 +40,8 @@ async fn setup(pool: &PgPool, roles: &[&str]) -> axum::Router {
     api::routes(api::AppState {
         pool: pool.clone(),
         cookie_secure: false,
+        // 測試直連，不經代理：退回與 Host 比對的路徑
+        public_origin: None,
     })
 }
 

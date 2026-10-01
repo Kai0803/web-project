@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO work_items\n          (project_id, contract_id, seq, name, unit, quantity, unit_price, amount)\n        VALUES (99999, $1, 99, 'x', '式', 1, 1, 1)\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "57e9bbc6cb835b6c67f731361dd825193b8bfcc5414667df794c4eae9c5ff315"
+}

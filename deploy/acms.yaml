@@ -102,8 +102,11 @@ spec:
         # 反向代理之後並改為 "true"，否則 session cookie 會在明文連線上傳輸。
         - name: COOKIE_SECURE
           value: "false"
-        - name: TRUST_PROXY
-          value: "false"
+        # 對外的來源。置於反向代理之後時必須設定（例如 https://acms.example.com），
+        # 否則 CSRF 的來源比對會退回與代理改寫過的 Host 比對並拒絕所有寫入。
+        # 本機直連留空即可。
+        - name: PUBLIC_ORIGIN
+          value: ""
       # 探測走 binary 自己的 healthcheck 子指令：映像內沒有 curl，
       # 而 podman 會把 httpGet 轉譯成 curl 指令。
       readinessProbe:

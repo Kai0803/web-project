@@ -71,7 +71,7 @@ impl FromRequestParts<AppState> for CsrfGuard {
 
     async fn from_request_parts(
         parts: &mut Parts,
-        _state: &AppState,
+        state: &AppState,
     ) -> Result<Self, Self::Rejection> {
         if parts.headers.get(REQUESTED_WITH).is_none() {
             return Err(ApiError::forbidden(
@@ -81,25 +81,41 @@ impl FromRequestParts<AppState> for CsrfGuard {
 
         // Origin 缺席的情況：同源的非瀏覽器用戶端（如 curl）。
         // 既然已要求自訂標頭，這裡只在 Origin 存在時比對它。
-        if let Some(origin) = parts.headers.get(axum::http::header::ORIGIN) {
-            let origin = origin
-                .to_str()
-                .map_err(|_| ApiError::forbidden("Origin 標頭格式不正確"))?;
+        let Some(origin) = parts.headers.get(axum::http::header::ORIGIN) else {
+            return Ok(Self);
+        };
+        let origin = origin
+            .to_str()
+            .map_err(|_| ApiError::forbidden("Origin 標頭格式不正確"))?;
 
-            let host = parts
-                .headers
-                .get(axum::http::header::HOST)
-                .and_then(|h| h.to_str().ok())
-                .ok_or_else(|| ApiError::forbidden("缺少 Host 標頭"))?;
-
-            let origin_host = origin
-                .rsplit_once("//")
-                .map(|(_, rest)| rest)
-                .unwrap_or(origin);
-
-            if origin_host != host {
+        // 設定了 PUBLIC_ORIGIN 就逐字比對完整 origin（含 scheme 與 port）。
+        //
+        // 退回與 Host 比對只適用於本機直連。那個比法的兩個問題：
+        // Host 與 Origin 都由請求提供（等於自我比對），而且反向代理
+        // 預設會把 Host 改寫成 upstream 的名字（nginx 的 proxy_pass
+        // 就是這樣），於是瀏覽器送的 Origin 與改寫後的 Host 不符，
+        // **每一個寫入請求都回 403**。那個症狀是「登入進去之後什麼都
+        // 存不了」，而原因看起來跟 CSRF 無關，很容易先去懷疑 cookie。
+        if let Some(expected) = state.public_origin.as_deref() {
+            if origin != expected {
                 return Err(ApiError::forbidden("請求來源不符，已被拒絕"));
             }
+            return Ok(Self);
+        }
+
+        let host = parts
+            .headers
+            .get(axum::http::header::HOST)
+            .and_then(|h| h.to_str().ok())
+            .ok_or_else(|| ApiError::forbidden("缺少 Host 標頭"))?;
+
+        let origin_host = origin
+            .rsplit_once("//")
+            .map(|(_, rest)| rest)
+            .unwrap_or(origin);
+
+        if origin_host != host {
+            return Err(ApiError::forbidden("請求來源不符，已被拒絕"));
         }
 
         Ok(Self)

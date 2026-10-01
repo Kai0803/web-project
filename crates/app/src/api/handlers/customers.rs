@@ -9,7 +9,8 @@ use axum::Json;
 use acms_domain::{CustomerId, Permission};
 
 use crate::api::dto::{
-    CreateCustomerRequest, CustomerResponse, PageQuery, PageResponse, UpdateCustomerRequest,
+    CreateCustomerRequest, CustomerOptionResponse, CustomerResponse, PageQuery, PageResponse,
+    UpdateCustomerRequest,
 };
 use crate::api::{ApiError, ApiJson, ApiPath, ApiQuery, AppState, CsrfGuard, CurrentUser};
 use crate::db;
@@ -39,6 +40,25 @@ pub async fn list(
         limit: page.limit,
         offset: page.offset,
     }))
+}
+
+/// 下拉選單用的客戶清單。不分頁——選單需要全部可選項，
+/// 用分頁列表填選單會在客戶數超過上限時靜默漏掉選項。
+#[utoipa::path(
+    get, path = "/api/v1/customers/options",
+    responses((status = 200, body = Vec<CustomerOptionResponse>)),
+    tag = "customers",
+)]
+pub async fn options(
+    State(state): State<AppState>,
+    CurrentUser(user): CurrentUser,
+) -> Result<Json<Vec<CustomerOptionResponse>>, ApiError> {
+    user.permissions
+        .require(Permission::CustomerRead)
+        .map_err(|d| ApiError::forbidden(d.to_string()))?;
+
+    let items = db::customer::options(&state.pool).await?;
+    Ok(Json(items.into_iter().map(Into::into).collect()))
 }
 
 #[utoipa::path(

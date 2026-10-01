@@ -106,7 +106,7 @@ web             Vue 3 + TypeScript，型別由 OpenAPI 產生
 | `STATIC_DIR` | `web/dist` | 前端建置產物位置 |
 | `FONT_DIR` | `/usr/share/fonts` | 報價單 PDF 的字型來源，需含中文字型 |
 | `COOKIE_SECURE` | `false` | 以 HTTPS 提供服務時設為 `true` |
-| `TRUST_PROXY` | `false` | 置於反向代理之後時設為 `true` |
+| `PUBLIC_ORIGIN` | 無 | 對外來源（如 `https://acms.example.com`）。CSRF 的來源比對以此為準，置於反向代理之後時必填；`COOKIE_SECURE=true` 但未設時會拒絕啟動 |
 | `LOG_FORMAT` | 人眼可讀 | 設為 `json` 輸出結構化日誌 |
 
 ## 備份

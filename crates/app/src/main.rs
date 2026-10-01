@@ -157,6 +157,17 @@ async fn run() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     info!(port = config.port, "設定已載入");
 
+    // 對外提供服務卻沒設 PUBLIC_ORIGIN 時直接拒絕啟動。
+    // 那個組合下 CSRF 的來源比對會退回與請求自帶的 Host 比對，
+    // 而反向代理會改寫 Host——結果是每個寫入請求都 403。
+    // 與「不使用預設值默默啟動」同一條原則：這種錯誤要在啟動時就講清楚。
+    if config.cookie_secure && config.public_origin.is_none() {
+        anyhow::bail!(
+            "COOKIE_SECURE=true 時必須設定 PUBLIC_ORIGIN（例如 https://acms.example.com），\
+             否則置於反向代理之後時所有寫入請求都會被 CSRF 檢查拒絕"
+        );
+    }
+
     if !config.cookie_secure {
         // 誤設不該悄悄過去：少了 Secure，session cookie 會在明文 HTTP 上傳輸
         tracing::warn!(
@@ -187,6 +198,7 @@ async fn run() -> anyhow::Result<()> {
         .merge(api::routes(api::AppState {
             pool,
             cookie_secure: config.cookie_secure,
+            public_origin: config.public_origin.clone(),
         }))
         // 前端由後端同源提供：省掉 CORS，也讓 cookie 認證單純。
         // 找不到的路徑一律回 index.html，交給前端路由處理——

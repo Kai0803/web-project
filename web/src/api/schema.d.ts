@@ -101,6 +101,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/customers/options": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * 下拉選單用的客戶清單。不分頁——選單需要全部可選項，
+         *     用分頁列表填選單會在客戶數超過上限時靜默漏掉選項。
+         */
+        get: operations["options"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/customers/{id}": {
         parameters: {
             query?: never;
@@ -431,6 +451,17 @@ export interface components {
             /** @description 角色代碼，例如 `["sales"]`。可給多個，權限取聯集。 */
             roles: string[];
             username: string;
+        };
+        /**
+         * @description 下拉選單用的客戶項目。
+         *
+         *     與 `CustomerResponse` 分開是刻意的：選單不分頁，所以回傳的欄位要少。
+         */
+        CustomerOptionResponse: {
+            code: string;
+            /** Format: int64 */
+            id: number;
+            name: string;
         };
         CustomerResponse: {
             address?: string | null;
@@ -907,6 +938,25 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    options: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CustomerOptionResponse"][];
+                };
             };
         };
     };

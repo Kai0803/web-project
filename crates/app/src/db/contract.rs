@@ -146,6 +146,7 @@ pub async fn find_by_quote_no(
 /// 以單次多列 INSERT 寫入工項，與報價明細相同的理由。
 pub async fn insert_work_items(
     ex: impl PgExecutor<'_>,
+    project_id: ProjectId,
     contract_id: ContractId,
     items: &[NewWorkItem],
 ) -> sqlx::Result<u64> {
@@ -165,8 +166,8 @@ pub async fn insert_work_items(
     sqlx::query!(
         r#"
         INSERT INTO work_items
-          (contract_id, seq, name, spec, unit, quantity, unit_price, unit_cost, amount)
-        SELECT $1, * FROM UNNEST(
+          (project_id, contract_id, seq, name, spec, unit, quantity, unit_price, unit_cost, amount)
+        SELECT $10, $1, * FROM UNNEST(
           $2::int[], $3::text[], $4::text[], $5::text[],
           $6::numeric[], $7::numeric[], $8::numeric[], $9::numeric[]
         )
@@ -180,6 +181,7 @@ pub async fn insert_work_items(
         &unit_prices,
         &unit_costs as &[Option<Decimal>],
         &amounts,
+        project_id.0,
     )
     .execute(ex)
     .await

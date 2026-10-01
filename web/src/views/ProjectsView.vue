@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { RouterLink } from 'vue-router'
-import { api, ApiError, type ProjectListItem, type Customer } from '@/api/client'
+import { api, ApiError, type ProjectListItem, type CustomerOption } from '@/api/client'
 import { useAuth } from '@/stores/auth'
 import ErrorAlert from '@/components/ErrorAlert.vue'
 import StatusTag from '@/components/StatusTag.vue'
+import Pager from '@/components/Pager.vue'
 
 const auth = useAuth()
 const projects = ref<ProjectListItem[]>([])
-const customers = ref<Customer[]>([])
+const customers = ref<CustomerOption[]>([])
+const page = ref({ total: 0, limit: 50, offset: 0 })
 const error = ref<unknown>(null)
 const loading = ref(true)
 
@@ -20,13 +22,22 @@ const busy = ref(false)
 async function load() {
   loading.value = true
   try {
-    projects.value = (await api.listProjects()).items
-    if (auth.can('customer.read')) customers.value = (await api.listCustomers()).items
+    const result = await api.listProjects({ limit: page.value.limit, offset: page.value.offset })
+    projects.value = result.items
+    page.value = { total: result.total, limit: result.limit, offset: result.offset }
+    // 選單用不分頁的 options 端點。用分頁列表填選單的話，
+    // 客戶數超過一頁之後就會有客戶無法被選為新專案的客戶。
+    if (auth.can('customer.read')) customers.value = await api.customerOptions()
   } catch (err) {
     error.value = err
   } finally {
     loading.value = false
   }
+}
+
+function goTo(offset: number) {
+  page.value.offset = offset
+  void load()
 }
 
 async function create() {
@@ -104,6 +115,7 @@ onMounted(load)
         </tr>
       </tbody>
     </table>
+    <Pager v-bind="page" :busy="loading" @go="goTo" />
     <div v-if="loading" class="empty">載入中…</div>
     <div v-else-if="!projects.length" class="empty">尚無專案。</div>
   </div>

@@ -98,6 +98,26 @@ pub struct CreateCustomerRequest {
     pub note: Option<String>,
 }
 
+/// 下拉選單用的客戶項目。
+///
+/// 與 `CustomerResponse` 分開是刻意的：選單不分頁，所以回傳的欄位要少。
+#[derive(Debug, Serialize, ToSchema)]
+pub struct CustomerOptionResponse {
+    pub id: i64,
+    pub code: String,
+    pub name: String,
+}
+
+impl From<crate::db::customer::CustomerOption> for CustomerOptionResponse {
+    fn from(o: crate::db::customer::CustomerOption) -> Self {
+        Self {
+            id: o.id,
+            code: o.code,
+            name: o.name,
+        }
+    }
+}
+
 /// 客戶的部分更新。
 ///
 /// 欄位缺席與明確給 `null` 是兩件事：缺席代表不動，`null` 代表清空。

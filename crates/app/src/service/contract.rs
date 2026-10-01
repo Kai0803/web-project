@@ -83,7 +83,9 @@ pub async fn create_from_quotation(
         })
         .collect();
 
-    db::contract::insert_work_items(&mut *tx, contract.id, &work_items).await?;
+    // project_id 一併傳入：work_items 有複合外鍵保證工項的專案與合約的專案一致
+    db::contract::insert_work_items(&mut *tx, contract.project_id, contract.id, &work_items)
+        .await?;
 
     db::project::set_status(&mut *tx, quotation.project_id, ProjectStatus::Contracted).await?;
 

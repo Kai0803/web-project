@@ -1,0 +1,23 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        INSERT INTO work_items\n          (project_id, contract_id, seq, name, spec, unit, quantity, unit_price, unit_cost, amount)\n        SELECT $10, $1, * FROM UNNEST(\n          $2::int[], $3::text[], $4::text[], $5::text[],\n          $6::numeric[], $7::numeric[], $8::numeric[], $9::numeric[]\n        )\n        ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8",
+        "Int4Array",
+        "TextArray",
+        "TextArray",
+        "TextArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "NumericArray",
+        "Int8"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f17a7f2dfdbaf5246c9a1769c5c3807f53a788421f4f97031746baf7615a1d62"
+}

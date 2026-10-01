@@ -225,6 +225,30 @@
         }
       }
     },
+    "/api/v1/customers/options": {
+      "get": {
+        "tags": [
+          "customers"
+        ],
+        "summary": "下拉選單用的客戶清單。不分頁——選單需要全部可選項，\n用分頁列表填選單會在客戶數超過上限時靜默漏掉選項。",
+        "operationId": "options",
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CustomerOptionResponse"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/customers/{id}": {
       "get": {
         "tags": [
@@ -1221,6 +1245,27 @@
           }
         },
         "additionalProperties": false
+      },
+      "CustomerOptionResponse": {
+        "type": "object",
+        "description": "下拉選單用的客戶項目。\n\n與 `CustomerResponse` 分開是刻意的：選單不分頁，所以回傳的欄位要少。",
+        "required": [
+          "id",
+          "code",
+          "name"
+        ],
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "id": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "name": {
+            "type": "string"
+          }
+        }
       },
       "CustomerResponse": {
         "type": "object",

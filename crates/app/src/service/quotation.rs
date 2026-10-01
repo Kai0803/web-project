@@ -255,6 +255,21 @@ pub async fn replace_items(
     Ok(QuotationDetail { quotation, items })
 }
 
+/// 轉狀態前的額外前置條件，在同一個交易內檢查。
+///
+/// 存在的理由是 `submit` 需要「至少一列明細」，而那個檢查如果在交易外做，
+/// 檢查與轉狀態之間就有窗口：A 按送審、檢查通過，B 在同一瞬間把明細清空
+/// （狀態還是 draft，trigger 與 `ensure_mutable` 都放行），A 的轉換接著把
+/// 狀態改成送審中——結果是一張 0 明細、0 元的報價單進入送審，而它可以
+/// 一路核准並轉成金額為 0 的合約。這個不變量只在應用層存在，
+/// 資料庫沒有對應的約束可以當第二道防線。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Precondition {
+    None,
+    /// 必須至少有一列明細。
+    HasItems,
+}
+
 /// 共用的狀態轉換流程：檢查權限、驗證轉換、以樂觀鎖更新、寫稽核。
 async fn transition(
     pool: &PgPool,
@@ -263,10 +278,17 @@ async fn transition(
     to: QuotationStatus,
     permission: Permission,
     approver: Option<acms_domain::UserId>,
+    precondition: Precondition,
 ) -> Result<Quotation> {
     actor.permissions.require(permission)?;
 
     let mut tx = pool.begin().await?;
+
+    if precondition == Precondition::HasItems
+        && db::quotation::items(&mut *tx, id).await?.is_empty()
+    {
+        return Err(ServiceError::EmptyQuotation);
+    }
 
     let current = db::quotation::find(&mut *tx, id)
         .await?
@@ -312,10 +334,6 @@ async fn transition(
 /// 但送審代表要給客戶看，而核准之後明細就不可再改、可直接轉成金額為 0 的合約，
 /// 還會把專案狀態推進到「已簽約」。
 pub async fn submit(pool: &PgPool, actor: &User, id: QuotationId) -> Result<Quotation> {
-    actor.permissions.require(Permission::QuotationWrite)?;
-    if db::quotation::items(pool, id).await?.is_empty() {
-        return Err(ServiceError::EmptyQuotation);
-    }
     transition(
         pool,
         actor,
@@ -323,6 +341,7 @@ pub async fn submit(pool: &PgPool, actor: &User, id: QuotationId) -> Result<Quot
         QuotationStatus::Pending,
         Permission::QuotationWrite,
         None,
+        Precondition::HasItems,
     )
     .await
 }
@@ -339,6 +358,7 @@ pub async fn approve(pool: &PgPool, actor: &User, id: QuotationId) -> Result<Quo
         QuotationStatus::Approved,
         Permission::QuotationApprove,
         Some(actor.id),
+        Precondition::None,
     )
     .await
 }
@@ -352,6 +372,7 @@ pub async fn reject(pool: &PgPool, actor: &User, id: QuotationId) -> Result<Quot
         QuotationStatus::Rejected,
         Permission::QuotationApprove,
         None,
+        Precondition::None,
     )
     .await
 }
@@ -365,6 +386,7 @@ pub async fn reopen(pool: &PgPool, actor: &User, id: QuotationId) -> Result<Quot
         QuotationStatus::Draft,
         Permission::QuotationWrite,
         None,
+        Precondition::None,
     )
     .await
 }

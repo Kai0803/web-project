@@ -761,6 +761,32 @@ async fn converting_to_contract_materialises_work_items(pool: PgPool) {
     let count = db::contract::count_work_items(&pool, c.id).await.unwrap();
     assert_eq!(count, 2, "報價明細應實體化為工項");
 
+    // 工項也直接掛在專案上，不必繞 contracts 走。
+    // 第二階段的 BOM 要用於報價估料、第三階段要在簽約前排工班時，
+    // 放寬 contract_id 就不需要回填資料（見 migration 0004）。
+    let anchored: i64 = sqlx::query_scalar!(
+        r#"SELECT count(*) AS "c!" FROM work_items WHERE project_id = $1"#,
+        project_id.0
+    )
+    .fetch_one(&pool)
+    .await
+    .unwrap();
+    assert_eq!(anchored, 2, "工項應同時掛在專案與合約上");
+
+    // 複合外鍵保證工項的專案與其合約的專案一致——寫錯寫不進去，
+    // 不是靠應用層記得檢查
+    let mismatched = sqlx::query!(
+        r#"
+        INSERT INTO work_items
+          (project_id, contract_id, seq, name, unit, quantity, unit_price, amount)
+        VALUES (99999, $1, 99, 'x', '式', 1, 1, 1)
+        "#,
+        c.id.0
+    )
+    .execute(&pool)
+    .await;
+    assert!(mismatched.is_err(), "工項不該能掛到別的專案的合約上");
+
     // 專案狀態同步推進
     let project = db::project::find(&pool, project_id).await.unwrap().unwrap();
     assert_eq!(project.status, acms_domain::ProjectStatus::Contracted);

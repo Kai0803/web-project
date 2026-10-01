@@ -3,11 +3,13 @@ import { ref, onMounted } from 'vue'
 import { api, ApiError, type Customer } from '@/api/client'
 import { useAuth } from '@/stores/auth'
 import ErrorAlert from '@/components/ErrorAlert.vue'
+import Pager from '@/components/Pager.vue'
 
 const auth = useAuth()
 const customers = ref<Customer[]>([])
 const error = ref<unknown>(null)
 const loading = ref(true)
+const page = ref({ total: 0, limit: 50, offset: 0 })
 
 const creating = ref(false)
 const form = ref({ name: '', tax_id: '', phone: '', address: '' })
@@ -17,12 +19,19 @@ const busy = ref(false)
 async function load() {
   loading.value = true
   try {
-    customers.value = (await api.listCustomers()).items
+    const result = await api.listCustomers({ limit: page.value.limit, offset: page.value.offset })
+    customers.value = result.items
+    page.value = { total: result.total, limit: result.limit, offset: result.offset }
   } catch (err) {
     error.value = err
   } finally {
     loading.value = false
   }
+}
+
+function goTo(offset: number) {
+  page.value.offset = offset
+  void load()
 }
 
 async function create() {
@@ -97,6 +106,7 @@ onMounted(load)
         </tr>
       </tbody>
     </table>
+    <Pager v-bind="page" :busy="loading" @go="goTo" />
     <div v-if="loading" class="empty">載入中…</div>
     <div v-else-if="!customers.length" class="empty">尚無客戶資料。</div>
   </div>

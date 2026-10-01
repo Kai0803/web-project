@@ -25,6 +25,24 @@ export type UserSummary = Schemas['UserSummary']
 export type RoleSummary = Schemas['RoleSummary']
 export type CompanyProfile = Schemas['CompanyProfileBody']
 export type ErrorCode = Schemas['ErrorCode']
+export type CustomerOption = Schemas['CustomerOptionResponse']
+
+/**
+ * 分頁參數。預設不帶，由後端決定每頁筆數。
+ *
+ * 列表原本硬寫 `?limit=200`（剛好是後端的上限，所以 clamp 不會報錯，
+ * 它就靜靜地回前 200 筆）。年專案 150–300 個，上線 8–16 個月後
+ * 專案列表就看不到一部分資料，而且沒有任何錯誤訊息。
+ */
+export type PageParams = { limit?: number; offset?: number }
+
+function pageQuery(p: PageParams = {}): string {
+    const q = new URLSearchParams()
+    if (p.limit !== undefined) q.set('limit', String(p.limit))
+    if (p.offset !== undefined) q.set('offset', String(p.offset))
+    const s = q.toString()
+    return s ? `?${s}` : ''
+}
 
 /** 後端回傳的錯誤。`code` 是列舉，前端可據此分流而不必比對訊息字串。 */
 export class ApiError extends Error {
@@ -108,21 +126,33 @@ export const api = {
   me: () => request<Me>('GET', '/api/v1/auth/me'),
 
   // 客戶
-  listCustomers: () =>
-    request<{ items: Customer[]; total: number }>('GET', '/api/v1/customers?limit=200'),
+  listCustomers: (page?: PageParams) =>
+    request<Schemas['PageResponse_CustomerResponse']>(
+      'GET',
+      `/api/v1/customers${pageQuery(page)}`,
+    ),
+  // 下拉選單用。與列表分開：選單需要全部可選項，用分頁列表填選單
+  // 會在客戶數超過上限時靜默漏掉選項。
+  customerOptions: () => request<CustomerOption[]>('GET', '/api/v1/customers/options'),
   createCustomer: (body: Schemas['CreateCustomerRequest']) =>
     request<Customer>('POST', '/api/v1/customers', body),
 
   // 專案
-  listProjects: () =>
-    request<{ items: ProjectListItem[]; total: number }>('GET', '/api/v1/projects?limit=200'),
+  listProjects: (page?: PageParams) =>
+    request<Schemas['PageResponse_ProjectListItem']>(
+      'GET',
+      `/api/v1/projects${pageQuery(page)}`,
+    ),
   getProject: (id: number) => request<Project>('GET', `/api/v1/projects/${id}`),
   createProject: (body: Schemas['CreateProjectRequest']) =>
     request<Project>('POST', '/api/v1/projects', body),
 
   // 報價單
-  listQuotations: (projectId: number) =>
-    request<{ items: Quotation[] }>('GET', `/api/v1/projects/${projectId}/quotations`),
+  listQuotations: (projectId: number, page?: PageParams) =>
+    request<Schemas['PageResponse_QuotationResponse']>(
+      'GET',
+      `/api/v1/projects/${projectId}/quotations${pageQuery(page)}`,
+    ),
   getQuotation: (id: number) => request<QuotationDetail>('GET', `/api/v1/quotations/${id}`),
   createQuotation: (projectId: number, lines: LineRequest[], note?: string) =>
     request<QuotationDetail>('POST', `/api/v1/projects/${projectId}/quotations`, { lines, note }),
