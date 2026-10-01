@@ -82,6 +82,10 @@ spec:
       ports:
         - containerPort: 8080
           hostPort: 8080
+          # 只發布到 loopback。不指定 hostIP 時 podman 綁 0.0.0.0，
+          # 整個區網都看得到這個服務，而 COOKIE_SECURE=false 的 cookie
+          # 會在明文 HTTP 上傳輸，同網段者側錄即可冒用 8 小時。
+          hostIP: 127.0.0.1
       env:
         - name: PORT
           value: "8080"
@@ -92,7 +96,10 @@ spec:
             secretKeyRef:
               name: acms-secret
               key: database-url
-        # 本機以 HTTP 提供服務，正式環境走 HTTPS 時改為 true
+        # 本機以 HTTP 提供服務，因此為 false。
+        #
+        # 移到 server 時這不是選項而是出廠條件：必須置於終結 TLS 的
+        # 反向代理之後並改為 "true"，否則 session cookie 會在明文連線上傳輸。
         - name: COOKIE_SECURE
           value: "false"
         - name: TRUST_PROXY
@@ -131,17 +138,26 @@ spec:
         - /bin/sh
         - -c
         - |
+          # 先備份再睡。原本是先 sleep 86400 才做第一份，而 restartPolicy: Always
+          # 會在每次容器重啟時把計時器歸零——pod 每天因更新、OOM 或主機重開
+          # 重啟一次的話，這個 loop 永遠跑不到 pg_dump，而唯一的徵兆是
+          # /backup 一直是空的，沒有任何告警。
           while true; do
-            sleep 86400
+            # 等資料庫起來。容器同時啟動，第一份備份不該因此失敗。
+            until pg_isready -h 127.0.0.1 -U acms -d acms >/dev/null 2>&1; do sleep 5; done
+
             stamp=$(date +%Y%m%d-%H%M%S)
             if pg_dump -h 127.0.0.1 -U acms -d acms -F c \
                  -f "/backup/acms-${stamp}.dump" 2>/tmp/err; then
               echo "backup ok: acms-${stamp}.dump"
+              # 成功時間寫成 sentinel，便於從外部判斷備份是否失聯
+              date -u +%FT%TZ > /backup/.last-success
               # 保留最近 14 份
               ls -1t /backup/acms-*.dump | tail -n +15 | xargs -r rm --
             else
               echo "backup FAILED: $(cat /tmp/err)" >&2
             fi
+            sleep 86400
           done
       volumeMounts:
         - name: backup

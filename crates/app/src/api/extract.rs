@@ -4,7 +4,7 @@ use axum::extract::FromRequestParts;
 use axum::http::request::Parts;
 use axum_extra::extract::CookieJar;
 
-use acms_domain::User;
+use acms_domain::{User, UserKind};
 
 use super::{error::ApiError, AppState};
 use crate::{auth, db};
@@ -37,6 +37,14 @@ impl FromRequestParts<AppState> for CurrentUser {
         // 停用的帳號即使持有有效 session 也不得繼續操作
         if !user.is_active {
             return Err(ApiError::forbidden("此帳號已停用"));
+        }
+
+        // 第一階段只開放同仁登入。客戶入口是第二階段的工作，在那之前
+        // customer_contact 帳號不得通過任何端點——少了這道，客戶入口
+        // 上線的那天所有既有端點會一次全部對客戶開放，因為它們只檢查
+        // 權限、不檢查「這筆資料是不是你的」（見 authz::can_access_customer）。
+        if user.kind != UserKind::Staff {
+            return Err(ApiError::forbidden("此帳號類型尚不支援登入"));
         }
 
         Ok(Self(user))

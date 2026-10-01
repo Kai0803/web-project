@@ -24,7 +24,7 @@ pub mod quotation;
 pub use authz::{Denied, Permission, Permissions};
 pub use entities::{
     CompanyProfile, Contract, ContractKind, Customer, CustomerContact, NewQuotationItem, Project,
-    ProjectListRow, ProjectStatus, Quotation, QuotationItem, User,
+    ProjectListRow, ProjectStatus, Quotation, QuotationItem, UnknownUserKind, User, UserKind,
 };
 pub use ids::{
     ContractId, CustomerId, ProjectId, QuotationId, QuotationItemId, UserId, WorkItemId,

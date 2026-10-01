@@ -129,6 +129,44 @@ async fn login_sets_an_httponly_strict_cookie(pool: PgPool) {
     );
 }
 
+/// 資料庫裡存的不能是 cookie 裡那個 token。
+///
+/// 存原始 token 的話，`sessions.id` 那一欄就等於 bearer 憑證：
+/// 唯讀資料庫帳號、每日 pg_dump 留在 volume 上的備份、或拿到備份檔的人
+/// 都能把值貼進 cookie 冒充任何使用者，而稽核會記成受害者做的。
+#[sqlx::test]
+async fn session_tokens_are_not_stored_in_the_clear(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let token = cookie
+        .split(';')
+        .next()
+        .and_then(|c| c.split_once('='))
+        .map(|(_, v)| v.to_owned())
+        .expect("cookie 應為 name=value 形式");
+    assert_eq!(token.len(), 64, "token 應為 32 位元組的 hex");
+
+    let stored: Vec<String> = sqlx::query_scalar!("SELECT id FROM sessions")
+        .fetch_all(&pool)
+        .await
+        .unwrap();
+
+    assert_eq!(stored.len(), 1);
+    assert_ne!(stored[0], token, "資料庫不該存 token 本身");
+    assert_eq!(stored[0].len(), 64, "應為 SHA-256 的 hex 摘要");
+
+    // 摘要仍然能解析回同一個 session——改存摘要不該讓登入失效
+    let (status, _) = send(
+        &router,
+        authed("GET", "/api/v1/auth/me", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+}
+
 #[sqlx::test]
 async fn wrong_password_is_rejected_without_revealing_which_part_failed(pool: PgPool) {
     let router = setup(&pool, &["admin"]).await;
@@ -913,6 +951,50 @@ async fn admin_can_fill_in_the_company_header(pool: PgPool) {
     .await;
     assert_eq!(profile["name"], "〇〇空調工程有限公司");
     assert_eq!(profile["tax_id"], "12345678");
+}
+
+/// 帶腳本的 Logo 必須在寫入資料庫前被擋下。
+///
+/// 公司資料任何登入者皆可讀取，所以一旦惡意 SVG 進得了資料庫，
+/// 就會在每個開啟「系統設定」的人（含 admin）的瀏覽器裡執行，
+/// 而同源腳本能繞過全部三道 CSRF 防護。畫面已改用 `<img>` 渲染，
+/// 這裡是第二道：不讓它進得了資料庫。
+#[sqlx::test]
+async fn a_logo_carrying_script_is_rejected(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    for payload in [
+        r#"<img src=x onerror="fetch('/api/v1/users',{method:'POST'})">"#,
+        r#"<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>"#,
+        r#"<svg><use xlink:href="/etc/passwd"/></svg>"#,
+    ] {
+        let (status, body) = send(
+            &router,
+            json_body(
+                authed("PUT", "/api/v1/company", &cookie),
+                json!({ "name": "測試", "logo_svg": payload, "quote_terms": "" }),
+            ),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "應被拒絕：{payload}");
+        assert!(
+            body["error"]["fields"]["logo_svg"].is_string(),
+            "應指出是哪個欄位的問題，實際：{body}"
+        );
+    }
+
+    // 專案自己的 logo 必須通得過，否則驗證把合法用途一起擋掉了
+    let real = include_str!("../../../assets/brand/logo-elbow.svg");
+    let (status, _) = send(
+        &router,
+        json_body(
+            authed("PUT", "/api/v1/company", &cookie),
+            json!({ "name": "測試", "logo_svg": real, "quote_terms": "" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
 }
 
 #[sqlx::test]

@@ -62,17 +62,59 @@ pub fn verify_password(password: &str, hash: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// `hash_password` 的 async 包裝，在 blocking 執行緒池上執行。
+///
+/// argon2 是刻意設計成慢且吃記憶體的（預設 m=19 MiB、t=2），
+/// 直接在 tokio worker 上跑會把整個 runtime 的一條 worker 阻塞數十毫秒。
+/// `/auth/login` 是唯一不需認證的端點，若雜湊在 worker 上執行，
+/// 併發打它就能讓所有 worker 排隊、健康檢查逾時、容器被重啟。
+pub async fn hash_password_blocking(password: String) -> Result<String, AuthError> {
+    tokio::task::spawn_blocking(move || hash_password(&password))
+        .await
+        .map_err(|_| AuthError::Hashing)?
+}
+
+/// `verify_password` 的 async 包裝。理由同 [`hash_password_blocking`]。
+///
+/// 執行緒 panic 時回 false——驗證失敗是這裡唯一安全的預設。
+async fn verify_password_blocking(password: String, hash: String) -> bool {
+    tokio::task::spawn_blocking(move || verify_password(&password, &hash))
+        .await
+        .unwrap_or(false)
+}
+
 /// 產生 session token：32 位元組的密碼學亂數。
 ///
 /// 不用流水號或時間戳——那些可被猜測。
 fn generate_token() -> String {
     let mut bytes = [0u8; 32];
     OsRng.fill_bytes(&mut bytes);
-    bytes.iter().fold(String::with_capacity(64), |mut acc, b| {
-        use std::fmt::Write;
-        let _ = write!(acc, "{b:02x}");
-        acc
-    })
+    hex(&bytes)
+}
+
+fn hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut acc, b| {
+            use std::fmt::Write;
+            let _ = write!(acc, "{b:02x}");
+            acc
+        })
+}
+
+/// `sessions.id` 存的是 token 的 SHA-256 摘要，不是 token 本身。
+///
+/// 原本直接存 token，那一欄就等於 bearer 憑證：任何能 `SELECT * FROM sessions`
+/// 的人（唯讀帳號、每日 `pg_dump` 留在 volume 上的 14 份備份、拿到備份檔的人）
+/// 都能把值貼進 cookie 冒充任何人，而稽核會記成受害者做的。存摘要之後
+/// 讀到資料庫不等於拿到憑證。
+///
+/// 這裡用單次 SHA-256 而非 argon2：token 已是 256 bit 的 `OsRng` 亂數，
+/// 沒有字典可暴力破解，需要的只是單向與抗碰撞；每個請求都要查 session，
+/// 慢雜湊在這條路上是純成本。
+fn token_digest(token: &str) -> String {
+    use sha2::{Digest, Sha256};
+    hex(&Sha256::digest(token.as_bytes()))
 }
 
 /// 驗證帳密並建立 session，回傳 token。
@@ -85,11 +127,11 @@ pub async fn login(
 
     // 帳號不存在時仍執行一次雜湊驗證，讓回應時間不因帳號是否存在而不同。
     let Some(credentials) = credentials else {
-        let _ = verify_password(password, DUMMY_HASH);
+        let _ = verify_password_blocking(password.to_owned(), DUMMY_HASH.to_owned()).await;
         return Err(AuthError::InvalidCredentials);
     };
 
-    if !verify_password(password, &credentials.password_hash) {
+    if !verify_password_blocking(password.to_owned(), credentials.password_hash).await {
         return Err(AuthError::InvalidCredentials);
     }
 
@@ -100,7 +142,7 @@ pub async fn login(
     let token = generate_token();
     sqlx::query!(
         "INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, $3)",
-        token,
+        token_digest(&token),
         credentials.user_id.0,
         OffsetDateTime::now_utc() + SESSION_TTL,
     )
@@ -117,9 +159,10 @@ const DUMMY_HASH: &str = "$argon2id$v=19$m=19456,t=2,p=1$c2FsdHNhbHRzYWx0c2E$\
 
 /// 由 token 取出使用者，順帶清掉過期的 session。
 pub async fn resolve(ex: impl PgExecutor<'_> + Copy, token: &str) -> Result<UserId, AuthError> {
+    let key = token_digest(token);
     let row = sqlx::query!(
         "SELECT user_id, expires_at FROM sessions WHERE id = $1",
-        token,
+        key,
     )
     .fetch_optional(ex)
     .await?;
@@ -130,7 +173,7 @@ pub async fn resolve(ex: impl PgExecutor<'_> + Copy, token: &str) -> Result<User
 
     if row.expires_at <= OffsetDateTime::now_utc() {
         // 過期即刪除，不留給後續請求再判斷一次
-        let _ = sqlx::query!("DELETE FROM sessions WHERE id = $1", token)
+        let _ = sqlx::query!("DELETE FROM sessions WHERE id = $1", key)
             .execute(ex)
             .await;
         return Err(AuthError::NoSession);
@@ -140,7 +183,7 @@ pub async fn resolve(ex: impl PgExecutor<'_> + Copy, token: &str) -> Result<User
 }
 
 pub async fn logout(ex: impl PgExecutor<'_>, token: &str) -> Result<(), AuthError> {
-    sqlx::query!("DELETE FROM sessions WHERE id = $1", token)
+    sqlx::query!("DELETE FROM sessions WHERE id = $1", token_digest(token))
         .execute(ex)
         .await?;
     Ok(())

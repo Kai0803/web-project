@@ -34,6 +34,32 @@ pub struct QuotationDetail {
     pub items: Vec<QuotationItem>,
 }
 
+/// 無成本權限者送來的成本一律丟棄。
+///
+/// 成本的權限控管原本只做在讀取側（DTO 序列化時剝除），寫入側是敞開的。
+/// 那會造成一個不需要惡意的資料損失：業務開啟報價單時 JSON 裡沒有 `unit_cost`，
+/// 表單因此是空的，他改一列品名按儲存，整批成本就被寫成 NULL——
+/// 而 `replace_items` 是「刪掉全部再重寫」的語意，成本事後無法回填。
+/// 反向也一樣：沒有權限看成本的人不該能寫入假成本去影響毛利判斷。
+///
+/// 因此成本的去向由伺服器決定：有權限者照送來的值寫，無權限者
+/// 一律改用資料庫既有的值（依 `line_no` 對應），新建時則為空。
+fn apply_cost_policy(
+    items: &mut [NewQuotationItem],
+    existing: &[QuotationItem],
+    actor_can_write_cost: bool,
+) {
+    if actor_can_write_cost {
+        return;
+    }
+    for item in items {
+        item.unit_cost = existing
+            .iter()
+            .find(|e| e.line_no == item.line_no)
+            .and_then(|e| e.unit_cost);
+    }
+}
+
 /// 將使用者輸入轉為可寫入的明細，逐列計算金額並編號。
 fn price_lines(lines: &[LineInput]) -> Result<Vec<NewQuotationItem>> {
     lines
@@ -69,7 +95,13 @@ pub async fn create(
 ) -> Result<QuotationDetail> {
     actor.permissions.require(Permission::QuotationWrite)?;
 
-    let items = price_lines(lines)?;
+    let mut items = price_lines(lines)?;
+    // 新建時沒有既有成本可承接，無權限者送來的值直接歸零
+    apply_cost_policy(
+        &mut items,
+        &[],
+        acms_domain::authz::can_view_cost(&actor.permissions),
+    );
     let year = time::OffsetDateTime::now_utc().year() as i16;
 
     let mut tx = pool.begin().await?;
@@ -136,7 +168,7 @@ pub async fn replace_items(
 ) -> Result<QuotationDetail> {
     actor.permissions.require(Permission::QuotationWrite)?;
 
-    let new_items = price_lines(lines)?;
+    let mut new_items = price_lines(lines)?;
 
     let mut tx = pool.begin().await?;
 
@@ -148,6 +180,14 @@ pub async fn replace_items(
 
     // 應用層先擋，資料庫 trigger 是第二道防線
     rules::ensure_mutable(quotation.status)?;
+
+    // 成本必須在刪除舊明細之前讀出來——刪掉就沒有來源可以承接了
+    let existing = db::quotation::items(&mut *tx, id).await?;
+    apply_cost_policy(
+        &mut new_items,
+        &existing,
+        acms_domain::authz::can_view_cost(&actor.permissions),
+    );
 
     db::quotation::delete_items(&mut *tx, id).await?;
     db::quotation::insert_items(&mut *tx, id, &new_items).await?;
@@ -163,8 +203,14 @@ pub async fn replace_items(
         id.0,
         "replace_items",
         Some(serde_json::json!({
-            "line_count": { "from": null, "to": new_items.len() },
-            "total": { "from": quotation.total.to_string(), "to": totals.total.to_string() }
+            "line_count": { "from": existing.len(), "to": new_items.len() },
+            "total": { "from": quotation.total.to_string(), "to": totals.total.to_string() },
+            // 記筆數而非金額：成本是受權限管制的資料，不該因為寫了稽核
+            // 而讓無權限者從稽核紀錄讀回來。筆數足以看出成本是否被清空。
+            "lines_with_cost": {
+                "from": existing.iter().filter(|i| i.unit_cost.is_some()).count(),
+                "to": new_items.iter().filter(|i| i.unit_cost.is_some()).count(),
+            }
         })),
     )
     .await?;

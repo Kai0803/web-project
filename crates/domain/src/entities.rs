@@ -203,10 +203,56 @@ pub struct Contract {
     pub updated_at: OffsetDateTime,
 }
 
+/// 帳號種類。
+///
+/// 資料庫的 `users.kind` 從一開始就區分這兩者，但第一階段只開放同仁登入。
+/// 把它帶進 `User` 的理由是：權限（能不能讀專案）與範圍（能讀哪些專案）
+/// 是兩件事，而目前所有端點只檢查前者。客戶入口上線的那天，若 `User`
+/// 分不出登入者是同仁還是客戶，任何拿到 `project.read` 的客戶帳號
+/// 就能列舉全部客戶的專案與案場地址。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum UserKind {
+    /// 公司同仁。
+    Staff,
+    /// 客戶聯絡人。第二 / 三階段的客戶入口使用，可見範圍限於自身 `customer_id`。
+    CustomerContact,
+}
+
+impl UserKind {
+    #[must_use]
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Staff => "staff",
+            Self::CustomerContact => "customer_contact",
+        }
+    }
+}
+
+impl std::str::FromStr for UserKind {
+    type Err = UnknownUserKind;
+
+    fn from_str(value: &str) -> Result<Self, Self::Err> {
+        match value {
+            "staff" => Ok(Self::Staff),
+            "customer_contact" => Ok(Self::CustomerContact),
+            other => Err(UnknownUserKind(other.to_owned())),
+        }
+    }
+}
+
+/// 資料庫的 `kind` 值不在已知清單內。
+///
+/// 與權限字串的處理刻意不同：未知的權限是忽略（移除一個權限不該把人鎖在外面），
+/// 未知的帳號種類是錯誤——猜錯會讓某類帳號取得不該有的可見範圍。
+#[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
+#[error("未知的帳號種類：{0}")]
+pub struct UnknownUserKind(pub String);
+
 /// 登入中的使用者。權限為其所有角色的聯集。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct User {
     pub id: UserId,
+    pub kind: UserKind,
     pub username: String,
     pub display_name: String,
     pub is_active: bool,

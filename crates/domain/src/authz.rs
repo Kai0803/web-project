@@ -160,9 +160,54 @@ pub fn can_view_cost(permissions: &Permissions) -> bool {
     permissions.has(Permission::QuotationCostRead)
 }
 
+/// 使用者是否可檢視屬於某客戶的資料。
+///
+/// 同仁看全部；客戶聯絡人只看自己所屬的客戶。
+///
+/// 第一階段沒有呼叫點——客戶入口還不存在，而 `CurrentUser` 目前擋掉所有
+/// 非同仁帳號。它先寫在這裡是因為第二階段要加的不是「一個權限」而是
+/// 「每個資源端點都要問一次這筆資料是不是你的」：`/projects/{id}`、
+/// `/quotations/{id}`、`/quotations/{id}/pdf`、`/contracts/{id}`
+/// 現在全是「有 `*.read` 就看得到全部」。少了這層，客戶入口上線當天
+/// 客戶之間的報價金額會互相可見。
+#[must_use]
+pub fn can_access_customer(
+    user_kind: crate::UserKind,
+    own: Option<crate::CustomerId>,
+    target: crate::CustomerId,
+) -> bool {
+    match user_kind {
+        crate::UserKind::Staff => true,
+        crate::UserKind::CustomerContact => own == Some(target),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn staff_see_every_customer_but_contacts_only_their_own() {
+        use crate::{CustomerId, UserKind};
+
+        assert!(can_access_customer(UserKind::Staff, None, CustomerId(7)));
+        assert!(can_access_customer(
+            UserKind::CustomerContact,
+            Some(CustomerId(7)),
+            CustomerId(7)
+        ));
+        assert!(!can_access_customer(
+            UserKind::CustomerContact,
+            Some(CustomerId(7)),
+            CustomerId(8)
+        ));
+        // customer_id 為空的客戶帳號不該看到任何人的資料
+        assert!(!can_access_customer(
+            UserKind::CustomerContact,
+            None,
+            CustomerId(7)
+        ));
+    }
 
     #[test]
     fn string_conversion_round_trips_for_every_permission() {

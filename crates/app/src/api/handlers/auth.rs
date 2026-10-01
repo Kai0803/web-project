@@ -37,6 +37,10 @@ fn session_cookie(token: String, secure: bool) -> Cookie<'static> {
 )]
 pub async fn login(
     State(state): State<AppState>,
+    // 登入也掛 CSRF。它目前靠「`Json` 要求 application/json → 跨源 fetch 觸發
+    // preflight → 無 CorsLayer → 瀏覽器攔下」擋住登入 CSRF，但那是間接的保護。
+    // 前端對所有方法都送 X-Requested-With，加這個參數不會改變行為。
+    _csrf: CsrfGuard,
     jar: CookieJar,
     Json(body): Json<LoginRequest>,
 ) -> Result<impl IntoResponse, ApiError> {

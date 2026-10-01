@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { api, type CompanyProfile } from '@/api/client'
 import { useAuth } from '@/stores/auth'
 import ErrorAlert from '@/components/ErrorAlert.vue'
@@ -10,7 +10,27 @@ const error = ref<unknown>(null)
 const notice = ref<string | null>(null)
 const busy = ref(false)
 
-const editable = auth.can('settings.manage')
+const editable = computed(() => auth.can('settings.manage'))
+
+/**
+ * Logo 以 data URL 餵給 `<img>`，不用 `v-html`。
+ *
+ * `v-html` 走 innerHTML，貼進去的「SVG」只要含 `<img src=x onerror=...>`
+ * 或 `<svg onload=...>` 就會在開啟此頁者的 origin 內執行——而公司資料
+ * 任何登入者皆可讀取，等於持有 settings.manage 的人可以在 admin 的瀏覽器裡
+ * 代為執行任意操作（三道 CSRF 防護對同源腳本全部無效）。
+ * `<img src>` 載入的 SVG 不會執行腳本，也碰不到父文件。
+ */
+const logoDataUrl = computed(() => {
+  const svg = profile.value?.logo_svg
+  if (!svg) return null
+  try {
+    // btoa 只吃 Latin-1，SVG 可能含中文（例如 <title>）
+    return `data:image/svg+xml;base64,${btoa(String.fromCharCode(...new TextEncoder().encode(svg)))}`
+  } catch {
+    return null
+  }
+})
 
 async function load() {
   try {
@@ -71,10 +91,11 @@ onMounted(load)
     <div class="card-head"><h2>Logo</h2></div>
     <div class="card-body">
       <div style="display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap">
-        <div
-          v-if="profile.logo_svg"
-          style="width: 88px; height: 88px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff"
-          v-html="profile.logo_svg"
+        <img
+          v-if="logoDataUrl"
+          :src="logoDataUrl"
+          alt="公司 Logo"
+          style="width: 88px; height: 88px; border: 1px solid var(--line); border-radius: 8px; padding: 10px; background: #fff; object-fit: contain"
         />
         <div class="field" style="flex: 1; min-width: 260px">
           <label for="logo">SVG 原始碼</label>

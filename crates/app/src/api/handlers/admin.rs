@@ -27,6 +27,7 @@ pub struct UserSummary {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateUserRequest {
     pub username: String,
     pub password: String,
@@ -36,6 +37,7 @@ pub struct CreateUserRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct UpdateUserRequest {
     pub display_name: Option<String>,
     pub is_active: Option<bool>,
@@ -127,7 +129,7 @@ pub async fn create_user(
         ));
     }
 
-    let hash = auth::hash_password(&body.password)?;
+    let hash = auth::hash_password_blocking(body.password.clone()).await?;
     let username = body.username.trim().to_owned();
 
     let mut tx = state.pool.begin().await?;
@@ -241,7 +243,7 @@ pub async fn update_user(
                 .into(),
             ))
         }
-        Some(pw) => Some(auth::hash_password(pw)?),
+        Some(pw) => Some(auth::hash_password_blocking(pw.to_owned()).await?),
     };
 
     let mut tx = state.pool.begin().await?;
@@ -365,6 +367,7 @@ pub async fn list_permissions(
 // ==================== 公司資料 ====================
 
 #[derive(Debug, Serialize, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CompanyProfileBody {
     pub name: String,
     pub tax_id: Option<String>,
@@ -391,6 +394,90 @@ impl From<CompanyProfile> for CompanyProfileBody {
             quote_terms: p.quote_terms,
         }
     }
+}
+
+/// Logo SVG 的大小上限。實際的 logo 不到 1 KiB，64 KiB 已經很寬鬆。
+const MAX_LOGO_BYTES: usize = 64 * 1024;
+
+/// 不允許出現在 Logo SVG 裡的構造。
+///
+/// 畫面上的 sink 已改成 `<img src=data:...>`（SVG 在 `<img>` 內無腳本能力），
+/// 這裡是第二道：不讓危險內容進得了資料庫。同一份 SVG 還會交給
+/// 報價單 PDF 的 usvg 解析，禁掉 `href` / `xlink:` 也一併關掉
+/// 「外部參照把本機檔案讀進圖片」這條不確定的路。
+const FORBIDDEN: [&str; 8] = [
+    "<script",
+    "javascript:",
+    "<foreignobject",
+    "<iframe",
+    "<use",
+    "<image",
+    "href",
+    "xlink:",
+];
+
+/// 檢查 Logo SVG。
+fn validate_logo_svg(svg: &str) -> Result<(), ApiError> {
+    let reject = |detail: String| {
+        Err(ApiError::validation(
+            "Logo SVG 不被接受",
+            [("logo_svg".to_owned(), detail)].into_iter().collect(),
+        ))
+    };
+
+    if svg.trim().is_empty() {
+        return Ok(()); // 空字串代表不設 logo
+    }
+    if svg.len() > MAX_LOGO_BYTES {
+        return reject(format!("超過上限 {MAX_LOGO_BYTES} 位元組"));
+    }
+
+    let lower = svg.to_ascii_lowercase();
+    if !lower.contains("<svg") {
+        return reject("需為 SVG 原始碼，應包含 <svg> 標籤".to_owned());
+    }
+    if let Some(bad) = FORBIDDEN.iter().find(|b| lower.contains(**b)) {
+        return reject(format!("不可包含 {bad}"));
+    }
+    if has_event_attribute(&lower) {
+        return reject("不可包含 on* 事件屬性".to_owned());
+    }
+    Ok(())
+}
+
+/// 偵測 `on<字母>…=` 形式的事件屬性，例如 `onload=`、`onerror =`。
+///
+/// 只認「屬性位置」的 on：前一個字元必須是空白或引號，否則
+/// `stroke-linecap="butt"` 之類含 on 的正常內容會被誤判。
+fn has_event_attribute(lower: &str) -> bool {
+    let bytes = lower.as_bytes();
+    for (index, window) in bytes.windows(2).enumerate() {
+        if window != b"on" {
+            continue;
+        }
+        let at_attribute_position = match index.checked_sub(1) {
+            None => false,
+            Some(prev) => bytes[prev].is_ascii_whitespace() || matches!(bytes[prev], b'"' | b'\''),
+        };
+        if !at_attribute_position {
+            continue;
+        }
+        let mut cursor = index + 2;
+        let name_start = cursor;
+        while cursor < bytes.len() && bytes[cursor].is_ascii_alphabetic() {
+            cursor += 1;
+        }
+        if cursor == name_start {
+            continue; // 只有 "on" 本身，不是事件名
+        }
+        while cursor < bytes.len() && bytes[cursor].is_ascii_whitespace() {
+            cursor += 1;
+        }
+        if bytes.get(cursor) == Some(&b'=') {
+            return true;
+        }
+    }
+    false
 }
 
 /// 公司資料為列印報價單所需，任何登入者皆可讀取；修改才需 `settings.manage`。
@@ -420,6 +507,10 @@ pub async fn update_company(
 ) -> Result<StatusCode, ApiError> {
     require(&user.permissions, Permission::SettingsManage)?;
 
+    if let Some(svg) = body.logo_svg.as_deref() {
+        validate_logo_svg(svg)?;
+    }
+
     let profile = CompanyProfile {
         name: body.name,
         tax_id: body.tax_id,
@@ -433,4 +524,61 @@ pub async fn update_company(
 
     db::company::update(&state.pool, &profile).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// 專案實際採用的 logo，必須通過驗證——
+    /// 擋得住攻擊但擋掉自己的 logo 等於沒修好。
+    const REAL_LOGO: &str = include_str!("../../../../../assets/brand/logo-elbow.svg");
+
+    #[test]
+    fn accepts_the_project_logo() {
+        assert!(validate_logo_svg(REAL_LOGO).is_ok());
+    }
+
+    #[test]
+    fn accepts_an_empty_value_as_no_logo() {
+        assert!(validate_logo_svg("").is_ok());
+        assert!(validate_logo_svg("   ").is_ok());
+    }
+
+    #[test]
+    fn rejects_script_bearing_payloads() {
+        for payload in [
+            r#"<img src=x onerror="fetch('/api/v1/users')">"#,
+            r#"<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"></svg>"#,
+            r#"<svg><script>alert(1)</script></svg>"#,
+            r#"<svg><a href="javascript:alert(1)">x</a></svg>"#,
+            r#"<svg><use xlink:href="/etc/passwd"/></svg>"#,
+            r#"<svg><foreignObject><body>x</body></foreignObject></svg>"#,
+        ] {
+            assert!(
+                validate_logo_svg(payload).is_err(),
+                "應被拒絕但通過了：{payload}"
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_content_that_is_not_svg() {
+        assert!(validate_logo_svg("<p>我只是一段文字</p>").is_err());
+    }
+
+    #[test]
+    fn rejects_oversized_input() {
+        let huge = format!("<svg>{}</svg>", "a".repeat(MAX_LOGO_BYTES));
+        assert!(validate_logo_svg(&huge).is_err());
+    }
+
+    /// 屬性名含 on 的正常 SVG 不該被誤判，否則驗證會擋掉合法的 logo。
+    #[test]
+    fn does_not_mistake_ordinary_attributes_for_event_handlers() {
+        assert!(!has_event_attribute(r#"<path stroke-linecap="butt"/>"#));
+        assert!(!has_event_attribute(r#"<path d="M 20 80 H 40"/>"#));
+        assert!(!has_event_attribute("<svg><title>冷氣配管</title></svg>"));
+        assert!(has_event_attribute(r#"<svg onload ="x">"#));
+    }
 }

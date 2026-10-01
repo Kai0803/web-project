@@ -227,6 +227,149 @@ async fn replacing_items_recomputes_the_header(pool: PgPool) {
     assert_eq!(updated.quotation.total, dec!(10500));
 }
 
+/// 建立第二位使用者，共用 [`setup`] 已建好的客戶與專案。
+///
+/// `setup` 會插入固定代碼的客戶與專案，呼叫兩次會撞唯一鍵。
+async fn extra_user(pool: &PgPool, username: &str, roles: &[&str]) -> User {
+    let id = sqlx::query_scalar!(
+        "INSERT INTO users (username, password_hash, display_name) VALUES ($1,$2,$3) RETURNING id",
+        username,
+        "x",
+        "測試者",
+    )
+    .fetch_one(pool)
+    .await
+    .unwrap();
+
+    for role in roles {
+        sqlx::query!(
+            "INSERT INTO user_roles (user_id, role_code) VALUES ($1,$2)",
+            id,
+            role,
+        )
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
+    db::user::load(pool, UserId(id)).await.unwrap().unwrap()
+}
+
+/// 業務重寫明細不該清掉主管填的成本。
+///
+/// 這是個不需要惡意就會發生的資料損失：業務開啟報價單時 JSON 裡沒有
+/// `unit_cost`（讀取側依權限剝除），表單因此是空的，他改一列品名按儲存，
+/// 整批成本就被寫成 NULL——而 `replace_items` 是刪掉全部再重寫的語意，
+/// 成本事後無法回填。
+#[sqlx::test]
+async fn sales_rewriting_items_does_not_wipe_costs_they_cannot_see(pool: PgPool) {
+    let (manager, project_id) = setup(&pool, &["manager"]).await;
+    let sales = extra_user(&pool, "業務小陳", &["sales"]).await;
+
+    assert!(
+        acms_domain::authz::can_view_cost(&manager.permissions),
+        "前提：manager 看得到成本"
+    );
+    assert!(
+        !acms_domain::authz::can_view_cost(&sales.permissions),
+        "前提：sales 看不到成本"
+    );
+
+    let created = quotation::create(&pool, &manager, project_id, &lines(), None)
+        .await
+        .unwrap();
+    assert_eq!(created.items[0].unit_cost, Some(dec!(120)));
+    assert_eq!(created.items[1].unit_cost, Some(dec!(30000)));
+
+    // 業務改了第一列的品名，成本欄位對他是空的（他根本沒收到值）
+    let edited = vec![
+        quotation::LineInput {
+            name: "冷媒銅管 1/2\"".into(),
+            spec: None,
+            unit: "米".into(),
+            quantity: dec!(120),
+            unit_price: dec!(180),
+            unit_cost: None,
+            note: None,
+        },
+        quotation::LineInput {
+            name: "配管施工".into(),
+            spec: None,
+            unit: "式".into(),
+            quantity: dec!(1),
+            unit_price: dec!(45000),
+            unit_cost: None,
+            note: None,
+        },
+    ];
+
+    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &edited)
+        .await
+        .unwrap();
+
+    // 業務的改動生效
+    assert_eq!(updated.items[0].name, "冷媒銅管 1/2\"");
+    // 但成本原封不動
+    assert_eq!(
+        updated.items[0].unit_cost,
+        Some(dec!(120)),
+        "業務看不到的成本不該被他的儲存動作清掉"
+    );
+    assert_eq!(updated.items[1].unit_cost, Some(dec!(30000)));
+}
+
+/// 無權限者送進來的成本一律丟棄。
+///
+/// 反向的攻擊面：業務在看不到成本的前提下寫入假成本，
+/// 就能影響主管與會計唯一的毛利判斷依據。
+#[sqlx::test]
+async fn costs_submitted_without_permission_are_discarded(pool: PgPool) {
+    let (manager, project_id) = setup(&pool, &["manager"]).await;
+    let sales = extra_user(&pool, "業務小陳", &["sales"]).await;
+
+    // 新建：直接丟棄，沒有既有值可承接
+    let forged = vec![quotation::LineInput {
+        name: "配管施工".into(),
+        spec: None,
+        unit: "式".into(),
+        quantity: dec!(1),
+        unit_price: dec!(45000),
+        unit_cost: Some(dec!(1)),
+        note: None,
+    }];
+
+    let created = quotation::create(&pool, &sales, project_id, &forged, None)
+        .await
+        .unwrap();
+    assert_eq!(
+        created.items[0].unit_cost, None,
+        "無 quotation.cost.read 者送來的成本不該被寫入"
+    );
+
+    // 重寫：承接資料庫既有值，而非送來的值
+    let with_cost = vec![quotation::LineInput {
+        name: "配管施工".into(),
+        spec: None,
+        unit: "式".into(),
+        quantity: dec!(1),
+        unit_price: dec!(45000),
+        unit_cost: Some(dec!(30000)),
+        note: None,
+    }];
+    quotation::replace_items(&pool, &manager, created.quotation.id, &with_cost)
+        .await
+        .unwrap();
+
+    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &forged)
+        .await
+        .unwrap();
+    assert_eq!(
+        updated.items[0].unit_cost,
+        Some(dec!(30000)),
+        "應承接既有成本，而非業務送來的 1"
+    );
+}
+
 #[sqlx::test]
 async fn approved_quotation_items_cannot_be_replaced(pool: PgPool) {
     let (user, project_id) = setup(&pool, &["admin"]).await;

@@ -1053,7 +1053,8 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "ContractResponse": {
         "type": "object",
@@ -1104,7 +1105,8 @@
             ],
             "description": "ISO 8601 日期，例如 `2026-10-01`。"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateCustomerRequest": {
         "type": "object",
@@ -1139,7 +1141,8 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateProjectRequest": {
         "type": "object",
@@ -1167,7 +1170,8 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateQuotationRequest": {
         "type": "object",
@@ -1187,7 +1191,8 @@
               "null"
             ]
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CreateUserRequest": {
         "type": "object",
@@ -1214,7 +1219,8 @@
           "username": {
             "type": "string"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "CustomerResponse": {
         "type": "object",
@@ -1364,7 +1370,8 @@
             "type": "string",
             "example": "180"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "LoginRequest": {
         "type": "object",
@@ -1379,7 +1386,8 @@
           "username": {
             "type": "string"
           }
-        }
+        },
+        "additionalProperties": false
       },
       "MeResponse": {
         "type": "object",
@@ -1850,7 +1858,8 @@
               "$ref": "#/components/schemas/LineRequest"
             }
           }
-        }
+        },
+        "additionalProperties": false
       },
       "RoleSummary": {
         "type": "object",
@@ -1916,7 +1925,8 @@
               "type": "string"
             }
           }
-        }
+        },
+        "additionalProperties": false
       },
       "UserSummary": {
         "type": "object",

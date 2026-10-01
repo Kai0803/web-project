@@ -9,6 +9,13 @@
 //!
 //! 因此所有金額與數量都以 [`decimal_str`] 序列化為字串（並正規化尾零），
 //! utoipa 的 schema 也標為 `String`，產生的 TS 型別才會是 `string` 而非 `number`。
+//!
+//! # 請求型別一律 `deny_unknown_fields`
+//!
+//! serde 預設忽略不認識的欄位，所以欄位名拼錯會靜默生效為「沒帶那個欄位」。
+//! 在這套系統裡那是會造成資料損失的失效模式：若前端把 `unit_cost` 拼成
+//! `unitCost`，成本就會無聲變成 NULL 而不是收到一個錯誤。拒絕未知欄位
+//! 讓契約漂移在第一個請求就以 400 現形。
 
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
@@ -44,6 +51,7 @@ impl From<&User> for MeResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct LoginRequest {
     pub username: String,
     pub password: String,
@@ -81,6 +89,7 @@ impl From<Customer> for CustomerResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateCustomerRequest {
     pub name: String,
     pub tax_id: Option<String>,
@@ -136,6 +145,7 @@ impl From<ProjectListRow> for ProjectListItem {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateProjectRequest {
     pub customer_id: i64,
     pub name: String,
@@ -241,6 +251,7 @@ pub struct QuotationDetailResponse {
 /// 明細輸入。**沒有 `amount` 欄位**——金額由伺服器依進位規則計算，
 /// 呼叫端無從指定。
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct LineRequest {
     pub name: String,
     pub spec: Option<String>,
@@ -258,12 +269,14 @@ pub struct LineRequest {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateQuotationRequest {
     pub lines: Vec<LineRequest>,
     pub note: Option<String>,
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct ReplaceItemsRequest {
     pub lines: Vec<LineRequest>,
 }
@@ -298,6 +311,7 @@ impl From<Contract> for ContractResponse {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct CreateContractRequest {
     /// ISO 8601 日期，例如 `2026-10-01`。
     pub signed_date: Option<String>,
@@ -314,6 +328,7 @@ pub struct PageResponse<T> {
 }
 
 #[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
 pub struct PageQuery {
     pub limit: Option<i64>,
     pub offset: Option<i64>,

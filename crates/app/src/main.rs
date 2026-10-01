@@ -4,9 +4,13 @@
 //! 業務規則在 `acms-domain`，交易編排在 `service`，資料庫存取在 `db`。
 
 use acms_app::{api, auth, config, db};
-use axum::{extract::State, http::StatusCode, response::IntoResponse, routing::get, Json, Router};
+use axum::http::{header, HeaderValue, StatusCode};
+use axum::{extract::State, response::IntoResponse, routing::get, Json, Router};
 use sqlx::PgPool;
+use std::time::Duration;
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::set_header::SetResponseHeaderLayer;
+use tower_http::timeout::TimeoutLayer;
 use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
@@ -15,6 +19,17 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilte
 struct AppState {
     pool: PgPool,
 }
+
+/// Content-Security-Policy。XSS 的縱深防護：`script-src 'self'` 讓
+/// inline 的 `on*` handler 與外部 script 都無法執行，即使日後某處
+/// 誤用了 `v-html`。
+///
+/// `style-src` 目前需要 `'unsafe-inline'`，因為幾個 `.vue` 檔還有
+/// inline `style=`；把那些搬進 CSS class 之後就可以收緊這一條。
+const CSP: &str = "default-src 'self'; script-src 'self'; \
+                   style-src 'self' 'unsafe-inline'; img-src 'self' data:; \
+                   object-src 'none'; frame-ancestors 'none'; base-uri 'none'; \
+                   form-action 'self'";
 
 #[tokio::main]
 async fn main() {
@@ -102,7 +117,9 @@ async fn create_admin(username: &str, password: &str) -> anyhow::Result<()> {
     let pool = db::connect(&config.database_url, 2, config.db_connect_timeout).await?;
     db::migrate(&pool).await?;
 
-    let hash = auth::hash_password(password).map_err(|e| anyhow::anyhow!(e.to_string()))?;
+    let hash = auth::hash_password_blocking(password.to_owned())
+        .await
+        .map_err(|e| anyhow::anyhow!(e.to_string()))?;
 
     let mut tx = pool.begin().await?;
     let id = sqlx::query_scalar!(
@@ -140,6 +157,14 @@ async fn run() -> anyhow::Result<()> {
     let config = config::Config::from_env()?;
     info!(port = config.port, "設定已載入");
 
+    if !config.cookie_secure {
+        // 誤設不該悄悄過去：少了 Secure，session cookie 會在明文 HTTP 上傳輸
+        tracing::warn!(
+            "COOKIE_SECURE=false：session cookie 不帶 Secure，僅適用於本機 HTTP 開發。\
+             以 HTTPS 對外提供服務時必須設為 true"
+        );
+    }
+
     let pool = db::connect(
         &config.database_url,
         config.db_max_connections,
@@ -170,6 +195,25 @@ async fn run() -> anyhow::Result<()> {
             ServeDir::new(&config.static_dir)
                 .fallback(ServeFile::new(config.static_dir.join("index.html"))),
         )
+        .layer(SetResponseHeaderLayer::overriding(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(CSP),
+        ))
+        .layer(SetResponseHeaderLayer::overriding(
+            header::X_CONTENT_TYPE_OPTIONS,
+            HeaderValue::from_static("nosniff"),
+        ))
+        // 路徑含識別字（/quotations/12），不該隨 Referer 外流
+        .layer(SetResponseHeaderLayer::overriding(
+            header::REFERRER_POLICY,
+            HeaderValue::from_static("same-origin"),
+        ))
+        // 任何請求都不該無限期佔住連線。typst 排版是最慢的路徑，
+        // 30 秒遠大於實測的數百毫秒。
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(30),
+        ))
         .layer(TraceLayer::new_for_http());
 
     let addr = format!("0.0.0.0:{}", config.port);

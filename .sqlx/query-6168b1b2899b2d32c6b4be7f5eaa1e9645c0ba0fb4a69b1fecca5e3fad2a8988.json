@@ -1,0 +1,58 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n        SELECT u.id, u.kind::text AS \"kind!\", u.username, u.display_name,\n               u.is_active, u.customer_id,\n               COALESCE(\n                 array_agg(rp.permission) FILTER (WHERE rp.permission IS NOT NULL),\n                 ARRAY[]::text[]\n               ) AS \"permissions!: Vec<String>\"\n        FROM users u\n        LEFT JOIN user_roles ur ON ur.user_id = u.id\n        LEFT JOIN role_permissions rp ON rp.role_code = ur.role_code\n        WHERE u.id = $1\n        GROUP BY u.id\n        ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "kind!",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 2,
+        "name": "username",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 3,
+        "name": "display_name",
+        "type_info": "Text"
+      },
+      {
+        "ordinal": 4,
+        "name": "is_active",
+        "type_info": "Bool"
+      },
+      {
+        "ordinal": 5,
+        "name": "customer_id",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 6,
+        "name": "permissions!: Vec<String>",
+        "type_info": "TextArray"
+      }
+    ],
+    "parameters": {
+      "Left": [
+        "Int8"
+      ]
+    },
+    "nullable": [
+      false,
+      null,
+      false,
+      false,
+      false,
+      true,
+      null
+    ]
+  },
+  "hash": "6168b1b2899b2d32c6b4be7f5eaa1e9645c0ba0fb4a69b1fecca5e3fad2a8988"
+}

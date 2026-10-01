@@ -1,6 +1,6 @@
 //! 使用者與權限查詢。
 
-use acms_domain::{CustomerId, Permissions, User, UserId};
+use acms_domain::{CustomerId, Permissions, UnknownUserKind, User, UserId, UserKind};
 use sqlx::PgExecutor;
 
 /// 登入驗證用。密碼雜湊不進領域型別 [`User`]——
@@ -38,7 +38,8 @@ pub async fn credentials_for(
 pub async fn load(ex: impl PgExecutor<'_>, id: UserId) -> sqlx::Result<Option<User>> {
     let row = sqlx::query!(
         r#"
-        SELECT u.id, u.username, u.display_name, u.is_active, u.customer_id,
+        SELECT u.id, u.kind::text AS "kind!", u.username, u.display_name,
+               u.is_active, u.customer_id,
                COALESCE(
                  array_agg(rp.permission) FILTER (WHERE rp.permission IS NOT NULL),
                  ARRAY[]::text[]
@@ -54,8 +55,20 @@ pub async fn load(ex: impl PgExecutor<'_>, id: UserId) -> sqlx::Result<Option<Us
     .fetch_optional(ex)
     .await?;
 
-    Ok(row.map(|r| User {
+    let Some(r) = row else { return Ok(None) };
+
+    // 無法解讀的 kind 一律當成錯誤，不猜測。猜 staff 會給客戶帳號
+    // 全系統的可見範圍，猜 customer_contact 會把同仁鎖在外面。
+    let kind: UserKind = r.kind.parse().map_err(|e: UnknownUserKind| {
+        sqlx::Error::Decode(Box::new(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            e.to_string(),
+        )))
+    })?;
+
+    Ok(Some(User {
         id: UserId(r.id),
+        kind,
         username: r.username,
         display_name: r.display_name,
         is_active: r.is_active,
