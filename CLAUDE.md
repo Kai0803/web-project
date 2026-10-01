@@ -47,8 +47,7 @@ G2 定案的其餘選型：
 | API 契約 | utoipa 由 Rust 型別產生 OpenAPI，前端據此產生 TS 型別，CI 檢查漂移 |
 | 認證 | Cookie session 存 Postgres，`SameSite=Strict` + Origin 檢查 + 自訂 header |
 | 報價單輸出 | typst 伺服器端產生 PDF |
-
-尚未定案：Vue component library。
+| 前端樣式 | 手寫 CSS + 品牌色票，未採用 component library |
 
 完整設計見 [docs/g2-design.md](docs/g2-design.md)。
 
@@ -58,7 +57,7 @@ G2 定案的其餘選型：
 
 進 G4 審查前先自行跑過 `cargo clippy`、`cargo test`、`tsc --noEmit`。
 
-**目前進度**：第一階段 G2（設計）已完成審查修正，待使用者確認後進 G3。產物於 `docs/`。
+**目前進度**：第一階段 G3（實作）完成，待進 G4 審查。產物於 `docs/`。
 
 ## `.claude/` 的同步注意事項
 

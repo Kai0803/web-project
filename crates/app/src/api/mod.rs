@@ -50,6 +50,10 @@ pub fn routes(state: AppState) -> Router {
         // 報價單
         .route("/api/v1/quotations/{id}", get(handlers::quotations::detail))
         .route(
+            "/api/v1/quotations/{id}/pdf",
+            get(handlers::pdf::quotation_pdf),
+        )
+        .route(
             "/api/v1/quotations/{id}/items",
             put(handlers::quotations::replace_items),
         )

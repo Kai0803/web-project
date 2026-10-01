@@ -43,6 +43,7 @@ use super::handlers;
         handlers::quotations::reject,
         handlers::quotations::reopen,
         handlers::quotations::new_version,
+        handlers::pdf::quotation_pdf,
         handlers::contracts::create_from_quotation,
         handlers::contracts::detail,
         handlers::admin::list_users,

@@ -7,5 +7,6 @@ pub mod admin;
 pub mod auth;
 pub mod contracts;
 pub mod customers;
+pub mod pdf;
 pub mod projects;
 pub mod quotations;

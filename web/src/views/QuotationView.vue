@@ -220,6 +220,9 @@ onMounted(load)
                 class="btn ghost" :disabled="busy" @click="reopen">退回草稿</button>
         <button v-if="detail.status !== 'superseded' && auth.can('quotation.write')"
                 class="btn ghost" :disabled="busy" @click="newVersion">建立新版本</button>
+        <a class="btn ghost" :href="`/api/v1/quotations/${detail.id}/pdf`" target="_blank" rel="noopener">
+          下載 PDF
+        </a>
         <button v-if="detail.status === 'approved' && auth.can('contract.write')"
                 class="btn copper" :disabled="busy" @click="toContract">轉為合約</button>
       </div>

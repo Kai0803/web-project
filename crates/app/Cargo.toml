@@ -29,11 +29,16 @@ sqlx = { version = "0.8", default-features = false, features = [
 thiserror = { workspace = true }
 time = { workspace = true }
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal"] }
+ttf-parser = "0.25"
+typst = "0.15"
+typst-assets = { version = "0.15", features = ["fonts"] }
+typst-pdf = "0.15"
 tower-http = { version = "0.6", features = ["trace", "request-id", "util", "fs"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 utoipa = { version = "5", features = ["axum_extras", "time", "uuid"] }
 uuid = { version = "1", features = ["v4", "serde"] }
+typst-layout = "0.15"
 
 [dev-dependencies]
 rust_decimal_macros = { workspace = true }

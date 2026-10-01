@@ -7,6 +7,7 @@
 //!
 //! - [`api`] — HTTP handler、DTO、OpenAPI
 //! - [`db`] — sqlx 查詢。函式收 executor，交易由上層開啟
+//! - [`pdf`] — 報價單排版（typst）
 //! - [`service`] — use case：交易邊界、編排、授權決策
 //! - [`auth`] — 密碼雜湊與 session（機制；授權政策在 `acms_domain::authz`）
 //! - [`config`] — 環境變數讀取與啟動驗證
@@ -17,4 +18,5 @@ pub mod api;
 pub mod auth;
 pub mod config;
 pub mod db;
+pub mod pdf;
 pub mod service;

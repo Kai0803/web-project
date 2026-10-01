@@ -44,8 +44,11 @@ RUN touch crates/domain/src/lib.rs crates/app/src/main.rs \
 FROM debian:bookworm-slim
 
 # rustls 不需要系統 OpenSSL，只需要根憑證
+# rustls 不需要系統 OpenSSL，只需要根憑證。
+# fonts-noto-cjk 供報價單 PDF 排版中文——沒有它 typst 只會印出豆腐方塊，
+# 所以 PDF 產生器在找不到中文字型時會明確失敗而非靜默產出廢紙。
 RUN apt-get update \
- && apt-get install -y --no-install-recommends ca-certificates \
+ && apt-get install -y --no-install-recommends ca-certificates fonts-noto-cjk \
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --create-home --uid 10001 acms
 
@@ -54,6 +57,7 @@ COPY --from=web /web/dist /srv/web
 
 USER acms
 ENV STATIC_DIR=/srv/web
+ENV FONT_DIR=/usr/share/fonts
 ENV PORT=8080
 EXPOSE 8080
 

@@ -691,6 +691,39 @@
         }
       }
     },
+    "/api/v1/quotations/{id}/pdf": {
+      "get": {
+        "tags": [
+          "quotations"
+        ],
+        "operationId": "quotation_pdf",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "format": "int64"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "報價單 PDF",
+            "content": {
+              "application/pdf": {}
+            }
+          },
+          "403": {
+            "description": "權限不足"
+          },
+          "404": {
+            "description": ""
+          }
+        }
+      }
+    },
     "/api/v1/quotations/{id}/reject": {
       "post": {
         "tags": [
