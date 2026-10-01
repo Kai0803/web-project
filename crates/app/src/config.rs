@@ -10,10 +10,11 @@ pub struct Config {
     pub database_url: String,
     pub port: u16,
     /// 透過 HTTPS 提供服務時為 true，session cookie 才會帶 Secure。
-    /// 消費端為尚未實作的 auth 模組；部署 manifest 已設定此變數，故先保留欄位。
-    #[allow(dead_code)]
     pub cookie_secure: bool,
-    /// 置於反向代理之後時為 true，才信任 X-Forwarded-* 標頭。同上，待 auth 實作後使用。
+    /// 置於反向代理之後時為 true，才信任 `X-Forwarded-*` 標頭。
+    ///
+    /// 目前無消費端：CSRF 的來源比對用的是請求自帶的 `Host`，還沒有處理
+    /// 代理改寫 `Host` 的情形。欄位先留著，因為部署 manifest 已經設了這個變數。
     #[allow(dead_code)]
     pub trust_proxy: bool,
     /// 等待資料庫就緒的上限。容器啟動順序不保證，因此以重試處理。

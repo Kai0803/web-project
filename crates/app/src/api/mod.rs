@@ -10,10 +10,10 @@ mod handlers;
 mod openapi;
 
 pub use error::{ApiError, ErrorCode};
-pub use extract::{CsrfGuard, CurrentUser};
+pub use extract::{ApiJson, ApiPath, ApiQuery, CsrfGuard, CurrentUser};
 pub use openapi::ApiDoc;
 
-use axum::routing::{get, patch, post, put};
+use axum::routing::{any, get, patch, post, put};
 use axum::Router;
 use sqlx::PgPool;
 
@@ -98,5 +98,7 @@ pub fn routes(state: AppState) -> Router {
             "/api/v1/company",
             get(handlers::admin::get_company).put(handlers::admin::update_company),
         )
+        // 打錯的 API 路徑一律回 404 信封，不讓它流到 SPA 的靜態檔 fallback
+        .route("/api/{*path}", any(handlers::not_found))
         .with_state(state)
 }

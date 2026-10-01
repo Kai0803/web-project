@@ -105,3 +105,94 @@ impl FromRequestParts<AppState> for CsrfGuard {
         Ok(Self)
     }
 }
+
+// ==================== 錯誤格式一致的 extractor ====================
+
+/// `axum::Json` 的替代品，差別只在**失敗時**的回應格式。
+///
+/// axum 內建的 rejection 以 `text/plain` 回傳英文的 serde 訊息，不走
+/// [`ApiError`] 的 `{"error":{…}}` 信封（見 docs/g2-design.md 的錯誤契約）。
+/// 前端的 `JSON.parse` 因此直接丟 SyntaxError，使用者看到的是
+/// `Unexpected token 'F'…` 而不是我們寫的繁中訊息。
+///
+/// 最常見的觸發不是欄位拼錯，而是**數量欄位多打一個空格**——
+/// 金額與數量以字串反序列化成 `Decimal`，解析失敗走的就是 `JsonDataError`。
+///
+/// 所有請求體一律用這個型別解析，對外的錯誤格式才只有一種。
+pub struct ApiJson<T>(pub T);
+
+impl<T, S> axum::extract::FromRequest<S> for ApiJson<T>
+where
+    T: serde::de::DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request(req: axum::extract::Request, state: &S) -> Result<Self, Self::Rejection> {
+        axum::Json::<T>::from_request(req, state)
+            .await
+            .map(|axum::Json(value)| Self(value))
+            .map_err(|rejection: axum::extract::rejection::JsonRejection| {
+                // 請求體解析失敗一律是呼叫端的輸入問題 → 400。
+                // 細節放 fields.body：內容是請求自己的欄位名與型別，
+                // 不含伺服器內部資訊，而少了它前端無從得知是哪裡錯。
+                ApiError::validation(
+                    "請求內容格式不正確",
+                    [("body".to_owned(), rejection.body_text())]
+                        .into_iter()
+                        .collect(),
+                )
+            })
+    }
+}
+
+/// `axum::extract::Path` 的替代品。理由同 [`ApiJson`]：
+/// `/api/v1/quotations/abc` 原本回 400 `text/plain`。
+pub struct ApiPath<T>(pub T);
+
+impl<T, S> FromRequestParts<S> for ApiPath<T>
+where
+    T: serde::de::DeserializeOwned + Send,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        axum::extract::Path::<T>::from_request_parts(parts, state)
+            .await
+            .map(|axum::extract::Path(value)| Self(value))
+            .map_err(|rejection: axum::extract::rejection::PathRejection| {
+                ApiError::validation(
+                    "路徑參數不正確",
+                    [("path".to_owned(), rejection.body_text())]
+                        .into_iter()
+                        .collect(),
+                )
+            })
+    }
+}
+
+/// `axum::extract::Query` 的替代品。理由同 [`ApiJson`]。
+pub struct ApiQuery<T>(pub T);
+
+impl<T, S> FromRequestParts<S> for ApiQuery<T>
+where
+    T: serde::de::DeserializeOwned,
+    S: Send + Sync,
+{
+    type Rejection = ApiError;
+
+    async fn from_request_parts(parts: &mut Parts, state: &S) -> Result<Self, Self::Rejection> {
+        axum::extract::Query::<T>::from_request_parts(parts, state)
+            .await
+            .map(|axum::extract::Query(value)| Self(value))
+            .map_err(|rejection: axum::extract::rejection::QueryRejection| {
+                ApiError::validation(
+                    "查詢參數不正確",
+                    [("query".to_owned(), rejection.body_text())]
+                        .into_iter()
+                        .collect(),
+                )
+            })
+    }
+}

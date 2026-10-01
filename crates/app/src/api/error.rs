@@ -85,6 +85,18 @@ impl ApiError {
         }
     }
 
+    /// 業務上的衝突。與 `ServiceError::Conflict`（樂觀鎖）共用狀態碼，
+    /// 但訊息自訂——樂觀鎖那句「請重新載入後再試」對「帳號已存在」
+    /// 之類的衝突是錯誤的指示。
+    pub fn conflict(message: impl Into<String>) -> Self {
+        Self {
+            status: StatusCode::CONFLICT,
+            code: ErrorCode::Conflict,
+            message: message.into(),
+            fields: None,
+        }
+    }
+
     /// 內部錯誤。詳情只進日誌，對外僅給追蹤 ID——
     /// 錯誤訊息裡的 SQL 或檔案路徑對攻擊者很有價值。
     pub fn internal(context: &str, detail: impl std::fmt::Display) -> Self {
@@ -131,8 +143,16 @@ impl From<ServiceError> for ApiError {
                 message: err.to_string(),
                 fields: None,
             },
-            ServiceError::AlreadyApproved | ServiceError::AlreadyContracted => Self {
+            ServiceError::AlreadyApproved
+            | ServiceError::AlreadyContracted
+            | ServiceError::NotLatestVersion { .. } => Self {
                 status: StatusCode::CONFLICT,
+                code: ErrorCode::RuleViolation,
+                message: err.to_string(),
+                fields: None,
+            },
+            ServiceError::EmptyQuotation => Self {
+                status: StatusCode::UNPROCESSABLE_ENTITY,
                 code: ErrorCode::RuleViolation,
                 message: err.to_string(),
                 fields: None,

@@ -18,6 +18,15 @@ const busy = ref(false)
 
 /** 編輯中的明細。與伺服器回傳的 items 分開，儲存後才同步。 */
 type DraftLine = {
+  /**
+   * 這一列載入時的伺服器 id，新增的列為 null。
+   *
+   * 儲存時原樣送回，伺服器據此承接我們無權限檢視的欄位（成本）。
+   * 少了它，伺服器只能依陣列位置對應，刪掉中間一列就會把成本接到錯的列上。
+   */
+  id: number | null
+  /** 本地的穩定鍵，供 v-for 使用。新增的列還沒有伺服器 id。 */
+  uid: number
   name: string
   spec: string
   unit: string
@@ -35,8 +44,13 @@ const dirty = ref(false)
 const editable = computed(() => detail.value?.status === 'draft' && auth.can('quotation.write'))
 const canSeeCost = computed(() => auth.can('quotation.cost.read'))
 
+/** v-for 的穩定鍵來源。只在本頁有意義，不送到伺服器。 */
+let nextUid = 1
+
 function toDraft(d: QuotationDetail): DraftLine[] {
   return d.items.map((i) => ({
+    id: i.id,
+    uid: nextUid++,
     name: i.name,
     spec: i.spec ?? '',
     unit: i.unit,
@@ -64,6 +78,8 @@ async function load() {
 
 function addLine() {
   lines.value.push({
+    id: null,
+    uid: nextUid++,
     name: '',
     spec: '',
     unit: '式',
@@ -100,13 +116,17 @@ async function save() {
   notice.value = null
   try {
     const payload: LineRequest[] = lines.value.map((l) => ({
-      name: l.name,
-      spec: l.spec || null,
-      unit: l.unit,
-      quantity: l.quantity,
-      unit_price: l.unit_price,
-      unit_cost: l.unit_cost || null,
-      note: l.note || null,
+      // 原樣送回，讓伺服器認得出這是哪一列
+      id: l.id,
+      name: l.name.trim(),
+      spec: l.spec.trim() || null,
+      unit: l.unit.trim(),
+      // 後端以字串解析 Decimal，前後空白會讓整個請求被拒。
+      // 數值本身不在前端動，只去掉空白。
+      quantity: l.quantity.trim(),
+      unit_price: l.unit_price.trim(),
+      unit_cost: l.unit_cost.trim() || null,
+      note: l.note.trim() || null,
     }))
     const updated = await api.replaceItems(Number(props.id), payload)
     detail.value = updated
@@ -170,21 +190,13 @@ async function toContract() {
 }
 
 /**
- * 稅率顯示，例如 `0.0500` → `5%`。
+ * 稅率顯示，例如 `5%`。
  *
- * 純字串運算。稅率本身不是金額，但整條鏈既然刻意避開浮點，
- * 這裡也不開例外，免得日後被當成「可以用 Number()」的先例。
+ * 由伺服器算好後直接顯示。前端原本有一份自己的字串移位實作，
+ * 在小數位數為 1 時算錯（`0.1` 顯示成 `1%`）；同一個規則有兩份實作
+ * 就會有一份是錯的，而稅率是會印在報價單上的數字。
  */
-const taxPercent = computed(() => {
-  const rate = detail.value?.tax_rate ?? '0'
-  const [whole = '0', fraction = ''] = rate.split('.')
-  const digits = (whole + fraction).replace(/^0+/, '') || '0'
-  const shifted = fraction.length >= 2 ? fraction.length - 2 : 0
-  const scaled = digits.padStart(shifted + 1, '0')
-  const cut = scaled.length - shifted
-  const result = `${scaled.slice(0, cut)}${shifted ? '.' + scaled.slice(cut) : ''}`
-  return `${result.replace(/\.?0+$/, '')}%`
-})
+const taxPercent = computed(() => detail.value?.tax_percent ?? '0%')
 
 /** 樂觀鎖衝突時給出具體的下一步，而不是丟一句「衝突」。 */
 const conflictHint = computed(
@@ -261,7 +273,9 @@ onMounted(load)
           </tr>
         </thead>
         <tbody>
-          <tr v-for="(line, index) in lines" :key="index">
+          <!-- 鍵必須穩定：用索引的話，刪掉中間一列會讓 Vue 以位置重用
+               DOM，正在輸入的 IME 組字與焦點會跳到別列上 -->
+          <tr v-for="(line, index) in lines" :key="line.uid">
             <template v-if="editable">
               <td><input v-model="line.name" @input="touch(line)" /></td>
               <td><input v-model="line.spec" @input="touch(line)" /></td>

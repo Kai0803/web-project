@@ -3,7 +3,7 @@
 //! 這兩組端點是系統可被交付的前提：沒有帳號管理，管理員只能下 SQL 開帳號；
 //! 沒有公司資料設定，報價單印不出抬頭。
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::Json;
 use serde::{Deserialize, Serialize};
@@ -11,7 +11,7 @@ use utoipa::ToSchema;
 
 use acms_domain::{authz::Permission, CompanyProfile, Permissions, UserId};
 
-use crate::api::{ApiError, AppState, CsrfGuard, CurrentUser};
+use crate::api::{ApiError, ApiJson, ApiPath, AppState, CsrfGuard, CurrentUser};
 use crate::service::ServiceError;
 use crate::{auth, db};
 
@@ -108,7 +108,7 @@ pub async fn create_user(
     State(state): State<AppState>,
     CurrentUser(actor): CurrentUser,
     _csrf: CsrfGuard,
-    Json(body): Json<CreateUserRequest>,
+    ApiJson(body): ApiJson<CreateUserRequest>,
 ) -> Result<Json<UserSummary>, ApiError> {
     require(&actor.permissions, Permission::UserManage)?;
 
@@ -131,6 +131,14 @@ pub async fn create_user(
 
     let hash = auth::hash_password_blocking(body.password.clone()).await?;
     let username = body.username.trim().to_owned();
+    // 寫入與回應共用同一個正規化後的值，否則同一次請求的回應與儲存值不一致
+    let display_name = body.display_name.trim().to_owned();
+    if display_name.is_empty() {
+        return Err(ApiError::validation(
+            "請填寫顯示名稱",
+            [("display_name".to_owned(), "不可為空".to_owned())].into(),
+        ));
+    }
 
     let mut tx = state.pool.begin().await?;
 
@@ -138,13 +146,15 @@ pub async fn create_user(
         "INSERT INTO users (username, password_hash, display_name) VALUES ($1,$2,$3) RETURNING id",
         username,
         hash,
-        body.display_name.trim(),
+        display_name,
     )
     .fetch_one(&mut *tx)
     .await
     .map_err(
         |e| match e.as_database_error().and_then(|d| d.constraint()) {
-            Some("users_username_key") => ApiError::from(ServiceError::Conflict),
+            // 不借用 ServiceError::Conflict 的訊息：那句是樂觀鎖用的，
+            // 「請重新載入後再試」對「帳號已存在」是錯的指示
+            Some("users_username_key") => ApiError::conflict("此帳號已存在，請改用其他帳號"),
             _ => ApiError::from(e),
         },
     )?;
@@ -166,7 +176,7 @@ pub async fn create_user(
     Ok(Json(UserSummary {
         id,
         username,
-        display_name: body.display_name,
+        display_name,
         is_active: true,
         roles: body.roles,
     }))
@@ -218,8 +228,8 @@ pub async fn update_user(
     State(state): State<AppState>,
     CurrentUser(actor): CurrentUser,
     _csrf: CsrfGuard,
-    Path(id): Path<i64>,
-    Json(body): Json<UpdateUserRequest>,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(body): ApiJson<UpdateUserRequest>,
 ) -> Result<StatusCode, ApiError> {
     require(&actor.permissions, Permission::UserManage)?;
 
@@ -228,6 +238,15 @@ pub async fn update_user(
         return Err(ApiError::validation(
             "不可停用自己的帳號",
             [("is_active".to_owned(), "不可停用自己".to_owned())].into(),
+        ));
+    }
+
+    // 拔掉自己的角色等於拔掉 user.manage，與停用自己同一個失效模式；
+    // 唯一的管理員這麼做之後只能靠容器指令 create-admin 救援
+    if id == actor.id.0 && body.roles.as_deref().is_some_and(|r| r.is_empty()) {
+        return Err(ApiError::validation(
+            "不可清空自己的角色",
+            [("roles".to_owned(), "至少保留一個角色".to_owned())].into(),
         ));
     }
 
@@ -503,7 +522,7 @@ pub async fn update_company(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     _csrf: CsrfGuard,
-    Json(body): Json<CompanyProfileBody>,
+    ApiJson(body): ApiJson<CompanyProfileBody>,
 ) -> Result<StatusCode, ApiError> {
     require(&user.permissions, Permission::SettingsManage)?;
 

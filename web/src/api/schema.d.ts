@@ -470,6 +470,15 @@ export interface components {
          *     呼叫端無從指定。
          */
         LineRequest: {
+            /**
+             * Format: int64
+             * @description 這一列載入時的明細 id。重寫明細時原樣送回，伺服器據此承接
+             *     呼叫端無權限檢視的欄位（目前是成本）。新增的列不帶此欄位。
+             *
+             *     不以陣列位置或 `line_no` 承接：那兩者都會隨使用者刪除、插入、
+             *     調整順序而指向別的列，而承接錯誤的人正是看不到成本的人。
+             */
+            id?: number | null;
             name: string;
             note?: string | null;
             /** @example 120 */
@@ -547,6 +556,14 @@ export interface components {
                 subtotal: string;
                 /** @example 3750 */
                 tax_amount: string;
+                /**
+                 * @description 稅率的顯示標籤，例如 `5%`。
+                 *
+                 *     由伺服器算好而非前端自行轉換——這個轉換原本在前端有一份自己的
+                 *     實作，而它在小數位數為 1 時算錯（`0.1` 顯示成 `1%`）。
+                 *     與「金額一律由伺服器計算」同一條原則。
+                 */
+                tax_percent: string;
                 /** @example 0.0500 */
                 tax_rate: string;
                 /** @example 78750 */
@@ -621,6 +638,14 @@ export interface components {
             subtotal: string;
             /** @example 3750 */
             tax_amount: string;
+            /**
+             * @description 稅率的顯示標籤，例如 `5%`。
+             *
+             *     由伺服器算好而非前端自行轉換——這個轉換原本在前端有一份自己的
+             *     實作，而它在小數位數為 1 時算錯（`0.1` 顯示成 `1%`）。
+             *     與「金額一律由伺服器計算」同一條原則。
+             */
+            tax_percent: string;
             /** @example 0.0500 */
             tax_rate: string;
             /** @example 78750 */
@@ -638,6 +663,24 @@ export interface components {
             is_system: boolean;
             name: string;
             permissions: string[];
+        };
+        /**
+         * @description 客戶的部分更新。
+         *
+         *     欄位缺席與明確給 `null` 是兩件事：缺席代表不動，`null` 代表清空。
+         *     兩者若都收斂成 `None`，`PATCH {"name":"新名字"}` 會把統編、電話、
+         *     地址、備註一併寫成 NULL，而呼叫端從 200 回應裡看不出自己刪了四個欄位。
+         *     統編遺失對這個業務是實質損害——報價單與發票都要用。
+         *
+         *     `db::customer::CustomerPatch` 本來就是三態語意，這裡只是讓 DTO
+         *     不要把三態壓成兩態。
+         */
+        UpdateCustomerRequest: {
+            address?: string | null;
+            name?: string | null;
+            note?: string | null;
+            phone?: string | null;
+            tax_id?: string | null;
         };
         UpdateUserRequest: {
             display_name?: string | null;
@@ -905,7 +948,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["CreateCustomerRequest"];
+                "application/json": components["schemas"]["UpdateCustomerRequest"];
             };
         };
         responses: {

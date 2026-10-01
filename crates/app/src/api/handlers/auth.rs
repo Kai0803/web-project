@@ -7,7 +7,7 @@ use axum::Json;
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 
 use crate::api::dto::{LoginRequest, MeResponse};
-use crate::api::{ApiError, AppState, CsrfGuard, CurrentUser};
+use crate::api::{ApiError, ApiJson, AppState, CsrfGuard, CurrentUser};
 use crate::auth;
 
 /// 建立 session cookie。
@@ -42,7 +42,7 @@ pub async fn login(
     // 前端對所有方法都送 X-Requested-With，加這個參數不會改變行為。
     _csrf: CsrfGuard,
     jar: CookieJar,
-    Json(body): Json<LoginRequest>,
+    ApiJson(body): ApiJson<LoginRequest>,
 ) -> Result<impl IntoResponse, ApiError> {
     let token = auth::login(&state.pool, &body.username, &body.password).await?;
     let jar = jar.add(session_cookie(token, state.cookie_secure));

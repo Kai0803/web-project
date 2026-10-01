@@ -19,7 +19,12 @@ async function submit() {
   busy.value = true
   try {
     await auth.login(username.value, password.value)
-    const next = typeof route.query.next === 'string' ? route.query.next : '/projects'
+    // 只接受站內的絕對路徑。`//evil.com` 會被 history.pushState 當成
+    // protocol-relative URL 解析並拋 SecurityError（vue-router 不會真的
+    // 跳站，所以不是 open redirect，但會是個未捕捉的例外）。
+    const raw = route.query.next
+    const next =
+      typeof raw === 'string' && raw.startsWith('/') && !raw.startsWith('//') ? raw : '/projects'
     await router.push(next)
   } catch (err) {
     error.value = err

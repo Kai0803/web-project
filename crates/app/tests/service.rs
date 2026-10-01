@@ -74,6 +74,7 @@ async fn setup(pool: &PgPool, roles: &[&str]) -> (User, ProjectId) {
 fn lines() -> Vec<quotation::LineInput> {
     vec![
         quotation::LineInput {
+            source_id: None,
             name: "冷媒銅管 3/8\"".into(),
             spec: None,
             unit: "米".into(),
@@ -83,6 +84,7 @@ fn lines() -> Vec<quotation::LineInput> {
             note: None,
         },
         quotation::LineInput {
+            source_id: None,
             name: "配管施工".into(),
             spec: None,
             unit: "式".into(),
@@ -125,6 +127,7 @@ async fn amounts_come_from_the_domain_not_the_caller(pool: PgPool) {
     let (user, project_id) = setup(&pool, &["sales"]).await;
 
     let odd = vec![quotation::LineInput {
+        source_id: None,
         name: "零星工料".into(),
         spec: None,
         unit: "米".into(),
@@ -177,6 +180,7 @@ async fn invalid_line_leaves_no_partial_quotation(pool: PgPool) {
     let (user, project_id) = setup(&pool, &["sales"]).await;
 
     let bad = vec![quotation::LineInput {
+        source_id: None,
         name: "數量為零".into(),
         spec: None,
         unit: "式".into(),
@@ -208,6 +212,7 @@ async fn replacing_items_recomputes_the_header(pool: PgPool) {
         .unwrap();
 
     let fewer = vec![quotation::LineInput {
+        source_id: None,
         name: "只剩施工".into(),
         spec: None,
         unit: "式".into(),
@@ -281,9 +286,11 @@ async fn sales_rewriting_items_does_not_wipe_costs_they_cannot_see(pool: PgPool)
     assert_eq!(created.items[0].unit_cost, Some(dec!(120)));
     assert_eq!(created.items[1].unit_cost, Some(dec!(30000)));
 
-    // 業務改了第一列的品名，成本欄位對他是空的（他根本沒收到值）
+    // 業務改了第一列的品名。成本欄位對他是空的（他根本沒收到值），
+    // 但每一列都帶著自己的來源 id 送回來。
     let edited = vec![
         quotation::LineInput {
+            source_id: Some(created.items[0].id),
             name: "冷媒銅管 1/2\"".into(),
             spec: None,
             unit: "米".into(),
@@ -293,6 +300,7 @@ async fn sales_rewriting_items_does_not_wipe_costs_they_cannot_see(pool: PgPool)
             note: None,
         },
         quotation::LineInput {
+            source_id: Some(created.items[1].id),
             name: "配管施工".into(),
             spec: None,
             unit: "式".into(),
@@ -318,6 +326,127 @@ async fn sales_rewriting_items_does_not_wipe_costs_they_cannot_see(pool: PgPool)
     assert_eq!(updated.items[1].unit_cost, Some(dec!(30000)));
 }
 
+/// 刪掉中間一列之後，剩下的列必須還是接到自己原本的成本。
+///
+/// 承接的依據若是 `line_no`，這個情境會靜默接錯：`line_no` 是依送來的
+/// 陣列位置重新編號的，刪掉第一列之後 B 變成 1、C 變成 2，於是 B 接到
+/// A 的成本、C 接到 B 的，C 原本的成本永久消失。而且沒有任何一方會
+/// 發現——做這件事的人看不到成本，有權限的人下次打開看到的是一組
+/// 合法但錯誤的數字。
+#[sqlx::test]
+async fn deleting_a_line_does_not_shift_costs_onto_the_wrong_lines(pool: PgPool) {
+    let (manager, project_id) = setup(&pool, &["manager"]).await;
+    let sales = extra_user(&pool, "業務小陳", &["sales"]).await;
+
+    let three = vec![
+        quotation::LineInput {
+            source_id: None,
+            name: "A 銅管".into(),
+            spec: None,
+            unit: "米".into(),
+            quantity: dec!(10),
+            unit_price: dec!(100),
+            unit_cost: Some(dec!(60)),
+            note: None,
+        },
+        quotation::LineInput {
+            source_id: None,
+            name: "B 保溫".into(),
+            spec: None,
+            unit: "米".into(),
+            quantity: dec!(10),
+            unit_price: dec!(200),
+            unit_cost: Some(dec!(130)),
+            note: None,
+        },
+        quotation::LineInput {
+            source_id: None,
+            name: "C 吊架".into(),
+            spec: None,
+            unit: "式".into(),
+            quantity: dec!(1),
+            unit_price: dec!(5000),
+            unit_cost: Some(dec!(3200)),
+            note: None,
+        },
+    ];
+
+    let created = quotation::create(&pool, &manager, project_id, &three, None)
+        .await
+        .unwrap();
+    assert_eq!(created.items.len(), 3);
+
+    // 業務刪掉第一列，B 與 C 原樣送回（帶著自己的來源 id）
+    let remaining: Vec<quotation::LineInput> = created.items[1..]
+        .iter()
+        .map(|i| quotation::LineInput {
+            source_id: Some(i.id),
+            name: i.name.clone(),
+            spec: i.spec.clone(),
+            unit: i.unit.clone(),
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            unit_cost: None, // 業務收到的 JSON 裡沒有這個欄位
+            note: i.note.clone(),
+        })
+        .collect();
+
+    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &remaining)
+        .await
+        .unwrap();
+
+    assert_eq!(updated.items.len(), 2);
+    assert_eq!(updated.items[0].name, "B 保溫");
+    assert_eq!(
+        updated.items[0].unit_cost,
+        Some(dec!(130)),
+        "B 必須保有自己的成本，不是接到 A 的 60"
+    );
+    assert_eq!(updated.items[1].name, "C 吊架");
+    assert_eq!(
+        updated.items[1].unit_cost,
+        Some(dec!(3200)),
+        "C 必須保有自己的成本，不是接到 B 的 130"
+    );
+}
+
+/// 調換列順序時，成本要跟著各自的列走。
+#[sqlx::test]
+async fn reordering_lines_keeps_each_cost_with_its_own_line(pool: PgPool) {
+    let (manager, project_id) = setup(&pool, &["manager"]).await;
+    let sales = extra_user(&pool, "業務小陳", &["sales"]).await;
+
+    let created = quotation::create(&pool, &manager, project_id, &lines(), None)
+        .await
+        .unwrap();
+
+    // 兩列對調，各自帶著來源 id
+    let swapped: Vec<quotation::LineInput> = created
+        .items
+        .iter()
+        .rev()
+        .map(|i| quotation::LineInput {
+            source_id: Some(i.id),
+            name: i.name.clone(),
+            spec: i.spec.clone(),
+            unit: i.unit.clone(),
+            quantity: i.quantity,
+            unit_price: i.unit_price,
+            unit_cost: None,
+            note: i.note.clone(),
+        })
+        .collect();
+
+    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &swapped)
+        .await
+        .unwrap();
+
+    assert_eq!(updated.items[0].name, "配管施工");
+    assert_eq!(updated.items[0].unit_cost, Some(dec!(30000)));
+    assert_eq!(updated.items[1].name, "冷媒銅管 3/8\"");
+    assert_eq!(updated.items[1].unit_cost, Some(dec!(120)));
+}
+
 /// 無權限者送進來的成本一律丟棄。
 ///
 /// 反向的攻擊面：業務在看不到成本的前提下寫入假成本，
@@ -329,6 +458,7 @@ async fn costs_submitted_without_permission_are_discarded(pool: PgPool) {
 
     // 新建：直接丟棄，沒有既有值可承接
     let forged = vec![quotation::LineInput {
+        source_id: None,
         name: "配管施工".into(),
         spec: None,
         unit: "式".into(),
@@ -346,8 +476,9 @@ async fn costs_submitted_without_permission_are_discarded(pool: PgPool) {
         "無 quotation.cost.read 者送來的成本不該被寫入"
     );
 
-    // 重寫：承接資料庫既有值，而非送來的值
+    // 主管填上真正的成本
     let with_cost = vec![quotation::LineInput {
+        source_id: Some(created.items[0].id),
         name: "配管施工".into(),
         spec: None,
         unit: "式".into(),
@@ -356,17 +487,33 @@ async fn costs_submitted_without_permission_are_discarded(pool: PgPool) {
         unit_cost: Some(dec!(30000)),
         note: None,
     }];
-    quotation::replace_items(&pool, &manager, created.quotation.id, &with_cost)
+    let priced = quotation::replace_items(&pool, &manager, created.quotation.id, &with_cost)
         .await
         .unwrap();
+    assert_eq!(priced.items[0].unit_cost, Some(dec!(30000)));
 
-    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &forged)
+    // 業務帶著來源 id 重寫並偽造成本：承接資料庫既有值，忽略送來的 1
+    let forged_with_id = vec![quotation::LineInput {
+        source_id: Some(priced.items[0].id),
+        unit_cost: Some(dec!(1)),
+        ..forged[0].clone()
+    }];
+    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &forged_with_id)
         .await
         .unwrap();
     assert_eq!(
         updated.items[0].unit_cost,
         Some(dec!(30000)),
         "應承接既有成本，而非業務送來的 1"
+    );
+
+    // 不帶來源 id 等於新增的列，沒有成本可承接——也不能用它當成寫入管道
+    let updated = quotation::replace_items(&pool, &sales, created.quotation.id, &forged)
+        .await
+        .unwrap();
+    assert_eq!(
+        updated.items[0].unit_cost, None,
+        "沒有來源 id 的列不該憑位置接到別人的成本"
     );
 }
 
@@ -506,6 +653,54 @@ async fn new_version_copies_items_and_supersedes_the_old_one(pool: PgPool) {
     // 舊版明細不該被動到——「保留舊版可查」的前提就是舊版不可變
     let old_items = db::quotation::items(&pool, v1.quotation.id).await.unwrap();
     assert_eq!(old_items.len(), 2);
+}
+
+/// 從舊版改版不該把另一個「已簽約」的版本標成 superseded。
+///
+/// 檢查範圍與動作範圍必須一致：原本只檢查「來源版本是否已轉合約」，
+/// 但 `supersede_other_versions` 作用於同單號的**所有其他版本**。
+/// 於是從一個早已被取代的 V1 改版，會把已簽約的 V2 變成「已被取代」，
+/// 合約因此指向一份被取代的報價——而第二、三階段的 BOM 與派工
+/// 都是循 contract → quotation 回溯的。
+#[sqlx::test]
+async fn revising_an_old_version_cannot_supersede_a_contracted_one(pool: PgPool) {
+    let (user, project_id) = setup(&pool, &["admin"]).await;
+
+    let v1 = quotation::create(&pool, &user, project_id, &lines(), None)
+        .await
+        .unwrap();
+    let v2 = quotation::new_version(&pool, &user, v1.quotation.id)
+        .await
+        .unwrap();
+
+    quotation::submit(&pool, &user, v2.quotation.id)
+        .await
+        .unwrap();
+    quotation::approve(&pool, &user, v2.quotation.id)
+        .await
+        .unwrap();
+    contract::create_from_quotation(&pool, &user, v2.quotation.id, None)
+        .await
+        .unwrap();
+
+    // V1 自己沒有合約，但它的同單號手足有
+    let err = quotation::new_version(&pool, &user, v1.quotation.id)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(err, ServiceError::AlreadyContracted),
+        "應擋下，實際：{err}"
+    );
+
+    let after = db::quotation::find(&pool, v2.quotation.id)
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(
+        after.status,
+        QuotationStatus::Approved,
+        "已簽約的版本必須維持 approved，否則合約指向一份被取代的報價"
+    );
 }
 
 /// 已核准的版本也可以被新版本取代。

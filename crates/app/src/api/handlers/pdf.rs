@@ -1,13 +1,13 @@
 //! 報價單 PDF 下載。
 
 use axum::body::Body;
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::http::{header, StatusCode};
 use axum::response::{IntoResponse, Response};
 
 use acms_domain::{Permission, QuotationId};
 
-use crate::api::{ApiError, AppState, CurrentUser};
+use crate::api::{ApiError, ApiPath, AppState, CurrentUser};
 use crate::service::ServiceError;
 use crate::{db, pdf};
 
@@ -24,7 +24,7 @@ use crate::{db, pdf};
 pub async fn quotation_pdf(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Response, ApiError> {
     user.permissions
         .require(Permission::QuotationRead)

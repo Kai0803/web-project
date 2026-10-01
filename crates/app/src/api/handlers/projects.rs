@@ -1,6 +1,6 @@
 //! 專案 handler。
 
-use axum::extract::{Path, Query, State};
+use axum::extract::State;
 use axum::Json;
 
 use acms_domain::{CustomerId, Permission, ProjectId};
@@ -8,7 +8,7 @@ use acms_domain::{CustomerId, Permission, ProjectId};
 use crate::api::dto::{
     CreateProjectRequest, PageQuery, PageResponse, ProjectListItem, ProjectResponse,
 };
-use crate::api::{ApiError, AppState, CsrfGuard, CurrentUser};
+use crate::api::{ApiError, ApiJson, ApiPath, ApiQuery, AppState, CsrfGuard, CurrentUser};
 use crate::db;
 use crate::service::ServiceError;
 
@@ -21,7 +21,7 @@ use crate::service::ServiceError;
 pub async fn list(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Query(page): Query<PageQuery>,
+    ApiQuery(page): ApiQuery<PageQuery>,
 ) -> Result<Json<PageResponse<ProjectListItem>>, ApiError> {
     user.permissions
         .require(Permission::ProjectRead)
@@ -48,7 +48,7 @@ pub async fn list(
 pub async fn detail(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<ProjectResponse>, ApiError> {
     user.permissions
         .require(Permission::ProjectRead)
@@ -70,7 +70,7 @@ pub async fn create(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     _csrf: CsrfGuard,
-    Json(body): Json<CreateProjectRequest>,
+    ApiJson(body): ApiJson<CreateProjectRequest>,
 ) -> Result<Json<ProjectResponse>, ApiError> {
     user.permissions
         .require(Permission::ProjectWrite)

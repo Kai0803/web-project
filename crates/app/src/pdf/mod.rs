@@ -98,27 +98,6 @@ fn group(value: &str) -> String {
     }
 }
 
-/// 稅率字串轉百分比標籤，例如 `0.0500` → `5%`。純字串處理。
-fn tax_percent(rate: &str) -> String {
-    let (whole, fraction) = rate.split_once('.').map_or((rate, ""), |(w, f)| (w, f));
-    let digits: String = format!("{whole}{fraction}");
-    let trimmed = digits.trim_start_matches('0');
-    let digits = if trimmed.is_empty() { "0" } else { trimmed };
-
-    // 乘以 100 等於小數點右移兩位
-    let shift = fraction.len().saturating_sub(2);
-    let padded = format!("{:0>width$}", digits, width = shift + 1);
-    let cut = padded.len() - shift;
-    let result = if shift == 0 {
-        padded
-    } else {
-        format!("{}.{}", &padded[..cut], &padded[cut..])
-    };
-
-    let result = result.trim_end_matches('0').trim_end_matches('.');
-    format!("{}%", if result.is_empty() { "0" } else { result })
-}
-
 fn optional(value: &Option<String>) -> String {
     value.clone().unwrap_or_default()
 }
@@ -184,7 +163,7 @@ pub fn render(
             .collect(),
         subtotal: group(&quotation.subtotal.normalize().to_string()),
         tax_amount: group(&quotation.tax_amount.normalize().to_string()),
-        tax_percent: tax_percent(&quotation.tax_rate.to_string()),
+        tax_percent: acms_domain::money::tax_percent_label(quotation.tax_rate),
         total: group(&quotation.total.normalize().to_string()),
         terms: company.quote_terms.clone(),
         font_stack,
@@ -223,13 +202,5 @@ mod tests {
         assert_eq!(group("-5000"), "-5,000");
         assert_eq!(group("3.33"), "3.33");
         assert_eq!(group("12345.6789"), "12,345.6789");
-    }
-
-    #[test]
-    fn renders_tax_rate_as_a_percentage() {
-        assert_eq!(tax_percent("0.0500"), "5%");
-        assert_eq!(tax_percent("0.05"), "5%");
-        assert_eq!(tax_percent("0.0725"), "7.25%");
-        assert_eq!(tax_percent("0"), "0%");
     }
 }

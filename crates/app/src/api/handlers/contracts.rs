@@ -1,12 +1,12 @@
 //! 合約 handler。
 
-use axum::extract::{Path, State};
+use axum::extract::State;
 use axum::Json;
 
 use acms_domain::{ContractId, QuotationId};
 
 use crate::api::dto::{ContractResponse, CreateContractRequest};
-use crate::api::{ApiError, AppState, CsrfGuard, CurrentUser};
+use crate::api::{ApiError, ApiJson, ApiPath, AppState, CsrfGuard, CurrentUser};
 use crate::service::contract as svc;
 
 #[utoipa::path(
@@ -24,8 +24,8 @@ pub async fn create_from_quotation(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     _csrf: CsrfGuard,
-    Path(id): Path<i64>,
-    Json(body): Json<CreateContractRequest>,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(body): ApiJson<CreateContractRequest>,
 ) -> Result<Json<ContractResponse>, ApiError> {
     let signed_date = match body.signed_date.as_deref() {
         None => None,
@@ -55,7 +55,7 @@ pub async fn create_from_quotation(
 pub async fn detail(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<ContractResponse>, ApiError> {
     let contract = svc::find(&state.pool, &user, ContractId(id)).await?;
     Ok(Json(contract.into()))

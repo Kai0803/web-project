@@ -2,7 +2,7 @@
 //!
 //! 全部經 `service` 層——每個動作都涉及交易或跨表。
 
-use axum::extract::{Path, Query, State};
+use axum::extract::State;
 use axum::Json;
 
 use acms_domain::{authz, ProjectId, QuotationId};
@@ -11,7 +11,7 @@ use crate::api::dto::{
     CreateQuotationRequest, LineRequest, PageQuery, PageResponse, QuotationDetailResponse,
     QuotationItemResponse, QuotationResponse, ReplaceItemsRequest,
 };
-use crate::api::{ApiError, AppState, CsrfGuard, CurrentUser};
+use crate::api::{ApiError, ApiJson, ApiPath, ApiQuery, AppState, CsrfGuard, CurrentUser};
 use crate::db;
 use crate::service::quotation as svc;
 
@@ -19,6 +19,7 @@ fn to_line_inputs(lines: Vec<LineRequest>) -> Vec<svc::LineInput> {
     lines
         .into_iter()
         .map(|l| svc::LineInput {
+            source_id: l.id.map(acms_domain::QuotationItemId),
             name: l.name,
             spec: l.spec,
             unit: l.unit,
@@ -59,8 +60,8 @@ pub async fn create(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     _csrf: CsrfGuard,
-    Path(project_id): Path<i64>,
-    Json(body): Json<CreateQuotationRequest>,
+    ApiPath(project_id): ApiPath<i64>,
+    ApiJson(body): ApiJson<CreateQuotationRequest>,
 ) -> Result<Json<QuotationDetailResponse>, ApiError> {
     let lines = to_line_inputs(body.lines);
     let detail = svc::create(&state.pool, &user, ProjectId(project_id), &lines, body.note).await?;
@@ -76,7 +77,7 @@ pub async fn create(
 pub async fn detail(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<QuotationDetailResponse>, ApiError> {
     let detail = svc::detail(&state.pool, &user, QuotationId(id)).await?;
     Ok(Json(to_detail(detail, &user)))
@@ -96,8 +97,8 @@ pub async fn replace_items(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     _csrf: CsrfGuard,
-    Path(id): Path<i64>,
-    Json(body): Json<ReplaceItemsRequest>,
+    ApiPath(id): ApiPath<i64>,
+    ApiJson(body): ApiJson<ReplaceItemsRequest>,
 ) -> Result<Json<QuotationDetailResponse>, ApiError> {
     let lines = to_line_inputs(body.lines);
     let detail = svc::replace_items(&state.pool, &user, QuotationId(id), &lines).await?;
@@ -121,7 +122,7 @@ macro_rules! transition_handler {
             State(state): State<AppState>,
             CurrentUser(user): CurrentUser,
             _csrf: CsrfGuard,
-            Path(id): Path<i64>,
+            ApiPath(id): ApiPath<i64>,
         ) -> Result<Json<QuotationResponse>, ApiError> {
             let q = svc::$svc(&state.pool, &user, QuotationId(id)).await?;
             Ok(Json(q.into()))
@@ -157,7 +158,7 @@ pub async fn new_version(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
     _csrf: CsrfGuard,
-    Path(id): Path<i64>,
+    ApiPath(id): ApiPath<i64>,
 ) -> Result<Json<QuotationDetailResponse>, ApiError> {
     let detail = svc::new_version(&state.pool, &user, QuotationId(id)).await?;
     Ok(Json(to_detail(detail, &user)))
@@ -172,8 +173,8 @@ pub async fn new_version(
 pub async fn list_for_project(
     State(state): State<AppState>,
     CurrentUser(user): CurrentUser,
-    Path(project_id): Path<i64>,
-    Query(page): Query<PageQuery>,
+    ApiPath(project_id): ApiPath<i64>,
+    ApiQuery(page): ApiQuery<PageQuery>,
 ) -> Result<Json<PageResponse<QuotationResponse>>, ApiError> {
     user.permissions
         .require(acms_domain::Permission::QuotationRead)
@@ -181,9 +182,11 @@ pub async fn list_for_project(
 
     let page = db::Page::new(page.limit, page.offset);
     let items = db::quotation::list_for_project(&state.pool, ProjectId(project_id), page).await?;
+    // 總數要另外查。回本頁筆數的話，前端算不出頁數而且不會發現自己算錯。
+    let total = db::quotation::count_for_project(&state.pool, ProjectId(project_id)).await?;
 
     Ok(Json(PageResponse {
-        total: items.len() as i64,
+        total,
         items: items.into_iter().map(Into::into).collect(),
         limit: page.limit,
         offset: page.offset,

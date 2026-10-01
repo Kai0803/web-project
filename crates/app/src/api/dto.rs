@@ -98,6 +98,48 @@ pub struct CreateCustomerRequest {
     pub note: Option<String>,
 }
 
+/// 客戶的部分更新。
+///
+/// 欄位缺席與明確給 `null` 是兩件事：缺席代表不動，`null` 代表清空。
+/// 兩者若都收斂成 `None`，`PATCH {"name":"新名字"}` 會把統編、電話、
+/// 地址、備註一併寫成 NULL，而呼叫端從 200 回應裡看不出自己刪了四個欄位。
+/// 統編遺失對這個業務是實質損害——報價單與發票都要用。
+///
+/// `db::customer::CustomerPatch` 本來就是三態語意，這裡只是讓 DTO
+/// 不要把三態壓成兩態。
+#[derive(Debug, Deserialize, ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct UpdateCustomerRequest {
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>, nullable)]
+    pub tax_id: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>, nullable)]
+    pub phone: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>, nullable)]
+    pub address: Option<Option<String>>,
+    #[serde(default, deserialize_with = "present")]
+    #[schema(value_type = Option<String>, nullable)]
+    pub note: Option<Option<String>>,
+}
+
+/// 供 `Option<Option<T>>` 區分「欄位缺席」與「明確給 null」。
+///
+/// serde 對 `Option<Option<T>>` 的預設行為會把兩者都收成 `None`：
+/// 外層的 `deserialize_option` 碰到 `null` 就走 `visit_none`。
+/// `deserialize_with` 只在欄位實際出現時才被呼叫，所以這裡一律包一層
+/// `Some`；缺席的情況由 `#[serde(default)]` 給 `None`。
+fn present<'de, D, T>(deserializer: D) -> Result<Option<T>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+    T: Deserialize<'de>,
+{
+    T::deserialize(deserializer).map(Some)
+}
+
 // ==================== 專案 ====================
 
 #[derive(Debug, Serialize, ToSchema)]
@@ -208,6 +250,12 @@ pub struct QuotationResponse {
     #[serde(with = "decimal_str")]
     #[schema(value_type = String, example = "0.0500")]
     pub tax_rate: Decimal,
+    /// 稅率的顯示標籤，例如 `5%`。
+    ///
+    /// 由伺服器算好而非前端自行轉換——這個轉換原本在前端有一份自己的
+    /// 實作，而它在小數位數為 1 時算錯（`0.1` 顯示成 `1%`）。
+    /// 與「金額一律由伺服器計算」同一條原則。
+    pub tax_percent: String,
     #[serde(with = "decimal_str")]
     #[schema(value_type = String, example = "75000")]
     pub subtotal: Decimal,
@@ -231,6 +279,7 @@ impl From<Quotation> for QuotationResponse {
             quote_no: q.quote_no,
             version: q.version,
             status: q.status.as_str().to_owned(),
+            tax_percent: acms_domain::money::tax_percent_label(q.tax_rate),
             tax_rate: q.tax_rate,
             subtotal: q.subtotal,
             tax_amount: q.tax_amount,
@@ -253,6 +302,13 @@ pub struct QuotationDetailResponse {
 #[derive(Debug, Deserialize, ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct LineRequest {
+    /// 這一列載入時的明細 id。重寫明細時原樣送回，伺服器據此承接
+    /// 呼叫端無權限檢視的欄位（目前是成本）。新增的列不帶此欄位。
+    ///
+    /// 不以陣列位置或 `line_no` 承接：那兩者都會隨使用者刪除、插入、
+    /// 調整順序而指向別的列，而承接錯誤的人正是看不到成本的人。
+    #[serde(default)]
+    pub id: Option<i64>,
     pub name: String,
     pub spec: Option<String>,
     pub unit: String,

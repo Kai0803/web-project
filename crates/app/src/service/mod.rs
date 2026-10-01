@@ -40,6 +40,17 @@ pub enum ServiceError {
     #[error("此報價單已轉為合約")]
     AlreadyContracted,
 
+    /// 沒有明細的報價單不可送審。
+    #[error("請先新增至少一列明細再送審")]
+    EmptyQuotation,
+
+    /// 只能從最新版本改版。
+    ///
+    /// 改版會把同單號的其他版本全部標成 superseded，所以從舊版改版
+    /// 等於取代掉操作者沒看到的那一版。
+    #[error("此報價單已有更新的版本（第 {latest} 版），請從最新版本建立新版本")]
+    NotLatestVersion { latest: i32 },
+
     #[error(transparent)]
     Money(#[from] MoneyError),
 

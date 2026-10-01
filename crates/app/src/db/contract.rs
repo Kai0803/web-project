@@ -118,6 +118,31 @@ pub async fn find_by_quotation(
     .map(|opt| opt.map(ContractId))
 }
 
+/// 同一 `quote_no` 的任一版本是否已轉合約。
+///
+/// 改版會把同單號的**其他所有版本**一併標成 superseded，所以檢查範圍
+/// 必須是整個 quote_no，不能只看來源版本：從一個早已被取代的舊版改版，
+/// 會把另一個已簽約的版本變成「已被取代」，合約就指向一份被取代的報價。
+/// 檢查的範圍與動作的範圍必須一致。
+pub async fn find_by_quote_no(
+    ex: impl PgExecutor<'_>,
+    quote_no: &str,
+) -> sqlx::Result<Option<ContractId>> {
+    sqlx::query_scalar!(
+        r#"
+        SELECT c.id
+        FROM contracts c
+        JOIN quotations q ON q.id = c.quotation_id
+        WHERE q.quote_no = $1
+        LIMIT 1
+        "#,
+        quote_no,
+    )
+    .fetch_optional(ex)
+    .await
+    .map(|opt| opt.map(ContractId))
+}
+
 /// 以單次多列 INSERT 寫入工項，與報價明細相同的理由。
 pub async fn insert_work_items(
     ex: impl PgExecutor<'_>,

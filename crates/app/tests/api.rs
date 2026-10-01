@@ -52,17 +52,33 @@ fn request(method: &str, uri: &str) -> axum::http::request::Builder {
         .header("x-requested-with", "XMLHttpRequest")
 }
 
+/// 送出請求並解析 JSON 回應。
+///
+/// 非 JSON 的回應一律當成失敗。原本的寫法是 `unwrap_or(Value::Null)`，
+/// 於是 axum 內建 rejection 回的 `text/plain` 被靜默轉成 `Null`，
+/// 測試照樣全綠——那是「錯誤回應不在信封裡」這個問題能長期存在的原因。
 async fn send(router: &axum::Router, req: Request<Body>) -> (StatusCode, Value) {
     let response = router.clone().oneshot(req).await.unwrap();
     let status = response.status();
+    let content_type = response
+        .headers()
+        .get(header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_owned();
     let bytes = axum::body::to_bytes(response.into_body(), 1 << 20)
         .await
         .unwrap();
-    let body = if bytes.is_empty() {
-        Value::Null
-    } else {
-        serde_json::from_slice(&bytes).unwrap_or(Value::Null)
-    };
+
+    if bytes.is_empty() {
+        return (status, Value::Null);
+    }
+    let body = serde_json::from_slice(&bytes).unwrap_or_else(|err| {
+        panic!(
+            "回應不是 JSON（status {status}, content-type {content_type}）：{err}\nbody: {}",
+            String::from_utf8_lossy(&bytes)
+        )
+    });
     (status, body)
 }
 
@@ -341,6 +357,28 @@ async fn reads_do_not_require_the_csrf_header(pool: PgPool) {
 }
 
 // ==================== 金額序列化 ====================
+
+/// 建立一個客戶與專案，回傳專案 id。
+async fn create_project(router: &axum::Router, cookie: &str) -> i64 {
+    let (_, customer) = send(
+        router,
+        json_body(
+            authed("POST", "/api/v1/customers", cookie),
+            json!({ "name": "測試客戶" }),
+        ),
+    )
+    .await;
+
+    let (_, project) = send(
+        router,
+        json_body(
+            authed("POST", "/api/v1/projects", cookie),
+            json!({ "customer_id": customer["id"], "name": "內湖案場" }),
+        ),
+    )
+    .await;
+    project["id"].as_i64().expect("專案應有 id")
+}
 
 async fn make_quotation(router: &axum::Router, cookie: &str) -> Value {
     let (_, customer) = send(
@@ -1050,4 +1088,253 @@ async fn roles_endpoint_reports_seeded_roles_with_their_permissions(pool: PgPool
         !perms.contains(&"quotation.cost.read"),
         "業務預設不含成本權限"
     );
+}
+
+// ==================== 錯誤格式契約 ====================
+
+/// 所有錯誤回應都必須在 `{"error":{…}}` 信封裡。
+///
+/// 原本有五類 extractor rejection 繞過信封並回 `text/plain`，
+/// 前端的 `JSON.parse` 因此直接拋 SyntaxError，使用者看到的是
+/// 瀏覽器產的英文訊息。最常觸發的不是欄位拼錯，而是**數量欄位
+/// 多打一個空格**——金額以字串解析成 Decimal，失敗走的就是這條路。
+#[sqlx::test]
+async fn every_rejection_uses_the_error_envelope(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+    let project_id = create_project(&router, &cookie).await;
+
+    let quotation_path = format!("/api/v1/projects/{project_id}/quotations");
+
+    // 1. 數量欄位有空白 —— 日常路徑
+    let (status, body) = send(
+        &router,
+        json_body(
+            authed("POST", &quotation_path, &cookie),
+            json!({ "lines": [{
+                "name": "配管", "unit": "式",
+                "quantity": " 1 ", "unit_price": "1000"
+            }]}),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST, "實際回應：{body}");
+    assert_eq!(body["error"]["code"], "VALIDATION_FAILED");
+    assert!(body["error"]["fields"]["body"].is_string());
+
+    // 2. 未知欄位
+    let (status, body) = send(
+        &router,
+        json_body(
+            authed("POST", &quotation_path, &cookie),
+            json!({ "lines": [], "unknownField": 1 }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "VALIDATION_FAILED");
+
+    // 3. 路徑參數不是數字
+    let (status, body) = send(
+        &router,
+        authed("GET", "/api/v1/quotations/abc", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "VALIDATION_FAILED");
+
+    // 4. 查詢參數不是數字
+    let (status, body) = send(
+        &router,
+        authed("GET", "/api/v1/customers?limit=abc", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(body["error"]["code"], "VALIDATION_FAILED");
+
+    // 5. 打錯的 API 路徑要回 404 信封，不該落到 SPA 的靜態檔 fallback
+    let (status, body) = send(
+        &router,
+        authed("GET", "/api/v1/customer/1", &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND, "實際回應：{body}");
+    assert_eq!(body["error"]["code"], "NOT_FOUND");
+}
+
+/// 數量與單價各自合法、乘積卻寫不進 `numeric(14,4)` 時要回 400 而非 500。
+#[sqlx::test]
+async fn an_amount_too_large_for_the_column_is_a_validation_error(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+    let project_id = create_project(&router, &cookie).await;
+
+    // 100 × 1e8 = 1e10，欄位上限是 9,999,999,999
+    let (status, body) = send(
+        &router,
+        json_body(
+            authed(
+                "POST",
+                &format!("/api/v1/projects/{project_id}/quotations"),
+                &cookie,
+            ),
+            json!({ "lines": [{
+                "name": "配管", "unit": "式",
+                "quantity": "100", "unit_price": "100000000"
+            }]}),
+        ),
+    )
+    .await;
+    assert_eq!(
+        status,
+        StatusCode::BAD_REQUEST,
+        "使用者輸入過大不該是 500，實際：{body}"
+    );
+    assert_eq!(body["error"]["code"], "VALIDATION_FAILED");
+}
+
+/// `PATCH /customers/{id}` 只送 name 不該把其他欄位清成 NULL。
+#[sqlx::test]
+async fn patching_a_customer_leaves_untouched_fields_alone(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+
+    let (_, created) = send(
+        &router,
+        json_body(
+            authed("POST", "/api/v1/customers", &cookie),
+            json!({
+                "name": "原始客戶", "tax_id": "12345678",
+                "phone": "02-1111-2222", "address": "台北市內湖區"
+            }),
+        ),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, patched) = send(
+        &router,
+        json_body(
+            authed("PATCH", &format!("/api/v1/customers/{id}"), &cookie),
+            json!({ "name": "改名後" }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "實際：{patched}");
+    assert_eq!(patched["name"], "改名後");
+    assert_eq!(patched["tax_id"], "12345678", "統編不該被清掉");
+    assert_eq!(patched["phone"], "02-1111-2222");
+    assert_eq!(patched["address"], "台北市內湖區");
+
+    // 明確給 null 才是清空
+    let (_, cleared) = send(
+        &router,
+        json_body(
+            authed("PATCH", &format!("/api/v1/customers/{id}"), &cookie),
+            json!({ "phone": null }),
+        ),
+    )
+    .await;
+    assert!(cleared["phone"].is_null(), "明確給 null 應清空");
+    assert_eq!(cleared["tax_id"], "12345678", "其他欄位仍不受影響");
+
+    // 名稱不可被改成空白
+    let (status, _) = send(
+        &router,
+        json_body(
+            authed("PATCH", &format!("/api/v1/customers/{id}"), &cookie),
+            json!({ "name": "   " }),
+        ),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// 不合法的狀態轉換要回 422 加 `RULE_VIOLATION`，不是 500。
+///
+/// 註：真正的樂觀鎖衝突（`lock_version` 失配 → 409 `CONFLICT`）需要兩個
+/// 並行交易才測得到，單執行緒的 router 測試做不出來——`service` 的
+/// `transition` 在同一個交易內重讀，永遠拿到最新值。那條路徑目前只有
+/// DB 層的 `status_update_respects_the_optimistic_lock` 覆蓋，
+/// 而前端的衝突提示依賴 `CONFLICT` 這個 code，是個已知的測試缺口。
+#[sqlx::test]
+async fn an_illegal_transition_returns_422_not_500(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+    let project_id = create_project(&router, &cookie).await;
+
+    let (_, created) = send(
+        &router,
+        json_body(
+            authed(
+                "POST",
+                &format!("/api/v1/projects/{project_id}/quotations"),
+                &cookie,
+            ),
+            json!({ "lines": [{
+                "name": "配管", "unit": "式",
+                "quantity": "1", "unit_price": "1000"
+            }]}),
+        ),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, _) = send(
+        &router,
+        authed("POST", &format!("/api/v1/quotations/{id}/submit"), &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    // 第二次送審：狀態已是 pending，轉換不合法 → 422 RuleViolation
+    let (status, body) = send(
+        &router,
+        authed("POST", &format!("/api/v1/quotations/{id}/submit"), &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "實際：{body}");
+    assert_eq!(body["error"]["code"], "RULE_VIOLATION");
+}
+
+/// 空白報價單不可送審。
+#[sqlx::test]
+async fn an_empty_quotation_cannot_be_submitted(pool: PgPool) {
+    let router = setup(&pool, &["admin"]).await;
+    let cookie = login(&router).await;
+    let project_id = create_project(&router, &cookie).await;
+
+    let (_, created) = send(
+        &router,
+        json_body(
+            authed(
+                "POST",
+                &format!("/api/v1/projects/{project_id}/quotations"),
+                &cookie,
+            ),
+            json!({ "lines": [] }),
+        ),
+    )
+    .await;
+    let id = created["id"].as_i64().unwrap();
+
+    let (status, body) = send(
+        &router,
+        authed("POST", &format!("/api/v1/quotations/{id}/submit"), &cookie)
+            .body(Body::empty())
+            .unwrap(),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY, "實際：{body}");
+    assert_eq!(body["error"]["code"], "RULE_VIOLATION");
 }

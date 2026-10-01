@@ -25,6 +25,27 @@ pub const MAX_QUANTITY: i64 = 1_000_000;
 /// 單價絕對值上限。取絕對值是因為折讓列的單價為負數。
 pub const MAX_UNIT_PRICE_ABS: i64 = 100_000_000;
 
+/// 單列小計與報價單合計的絕對值上限。
+///
+/// 這個值由 schema 決定而非業務判斷：`quotation_items.amount` 與
+/// `quotations.subtotal / tax_amount / total` 都是 `numeric(14,4)`，
+/// 整數部分只有 `14 - 4 = 10` 位，寫得進去的最大值是 9,999,999,999
+/// （Postgres 的錯誤訊息寫得很直接：must round to an absolute value
+/// less than 10^10）。
+///
+/// 若只擋 `MAX_QUANTITY × MAX_UNIT_PRICE_ABS`（1e14），通得過 domain
+/// 驗證的值會在 INSERT 時以 `22003 numeric_field_overflow` 失敗，
+/// 使用者拿到 500 加一個追蹤 ID，而原因只是數量多打了幾個零。
+/// 上限屬於領域規則，不該由欄位型別代為表達——這裡把兩者對齊。
+pub const MAX_AMOUNT: i64 = 9_999_999_999;
+
+/// 單張報價單的明細列數上限。
+///
+/// G1 的規模是每張 10–50 列。設上限的理由不是效能而是界定 `subtotal`
+/// 的值域：每列都合法（≤ `MAX_AMOUNT`）時，數百列相加仍可能超出欄位容量，
+/// 所以逐列與合計兩道都要有。
+pub const MAX_LINES: usize = 500;
+
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum MoneyError {
     #[error("數量必須大於 0")]
@@ -38,6 +59,15 @@ pub enum MoneyError {
 
     #[error("稅率必須介於 0 與 1 之間")]
     InvalidTaxRate,
+
+    #[error("列小計超過上限 {MAX_AMOUNT}，請確認數量與單價")]
+    AmountTooLarge,
+
+    #[error("報價總額超過上限 {MAX_AMOUNT}，請拆分為多張報價單")]
+    TotalTooLarge,
+
+    #[error("明細列數超過上限 {MAX_LINES}")]
+    TooManyLines,
 
     /// 在業務上限內不可能發生，但金額來源若為已損毀的資料仍需回報而非 panic。
     #[error("金額運算溢位")]
@@ -99,8 +129,32 @@ pub fn line_amount(quantity: Decimal, unit_price: Decimal) -> Result<Decimal, Mo
     let raw = quantity
         .checked_mul(unit_price)
         .ok_or(MoneyError::Overflow)?;
+    let amount = round_half_up(raw, 0);
 
-    Ok(round_half_up(raw, 0))
+    // 數量 × 單價的業務上限允許到 1e14，但 amount 欄位只容得下 10 位整數。
+    // 擋在這裡是 400；擋在 Postgres 就是 500。
+    if amount.abs() > Decimal::from(MAX_AMOUNT) {
+        return Err(MoneyError::AmountTooLarge);
+    }
+    Ok(amount)
+}
+
+/// 稅率的百分比標籤，例如 `0.0500` → `5%`、`0.1` → `10%`、`0.0725` → `7.25%`。
+///
+/// 純字串運算，不經過 `f64`——整條鏈刻意避開浮點，這裡不開例外。
+///
+/// 放在 domain 而非各自的顯示層，是因為這個轉換原本有兩份實作（一份給
+/// PDF、一份給畫面），而畫面那份在小數位數為 1 時算錯：`0.1` 顯示成 `1%`。
+/// 今天稅率固定 5%（兩位小數）剛好正確，但稅率是隨報價儲存、未來會調整的，
+/// 屆時那會是個印在報價單上的錯誤數字。
+#[must_use]
+pub fn tax_percent_label(rate: Decimal) -> String {
+    // 乘 100 等於小數點右移兩位。用 Decimal 自己乘，不自行搬小數點。
+    let percent = rate
+        .checked_mul(Decimal::ONE_HUNDRED)
+        .unwrap_or(Decimal::ZERO)
+        .normalize();
+    format!("{percent}%")
 }
 
 /// 一張報價單的三個金額。
@@ -120,10 +174,17 @@ pub struct Totals {
 /// 傳入未進位的值不會被拒絕，但算出的 `subtotal` 將與列印的逐列加總不符。
 pub fn totals(amounts: &[Decimal], tax_rate: Decimal) -> Result<Totals, MoneyError> {
     validate_tax_rate(tax_rate)?;
+    if amounts.len() > MAX_LINES {
+        return Err(MoneyError::TooManyLines);
+    }
 
     let mut subtotal = Decimal::ZERO;
     for amount in amounts {
         subtotal = subtotal.checked_add(*amount).ok_or(MoneyError::Overflow)?;
+    }
+    // 逐列都合法，加總仍可能超出欄位容量（數百列各近上限）
+    if subtotal.abs() > Decimal::from(MAX_AMOUNT) {
+        return Err(MoneyError::TotalTooLarge);
     }
 
     let raw_tax = subtotal.checked_mul(tax_rate).ok_or(MoneyError::Overflow)?;
@@ -132,6 +193,10 @@ pub fn totals(amounts: &[Decimal], tax_rate: Decimal) -> Result<Totals, MoneyErr
     let total = subtotal
         .checked_add(tax_amount)
         .ok_or(MoneyError::Overflow)?;
+    // subtotal 貼著上限時，加上稅額就會越界
+    if total.abs() > Decimal::from(MAX_AMOUNT) {
+        return Err(MoneyError::TotalTooLarge);
+    }
 
     Ok(Totals {
         subtotal,
@@ -338,14 +403,80 @@ mod tests {
         );
     }
 
+    /// 數量與單價各自合法，乘積卻寫不進 `numeric(14,4)` 的情況必須在
+    /// domain 被擋下，否則使用者會因為多打幾個零而拿到 500。
     #[test]
-    fn line_amount_within_business_limits_cannot_overflow() {
-        // 上限相乘 = 1e6 × 1e8 = 1e14，遠低於 Decimal 上限約 7.9e28
-        let max = line_amount(
-            Decimal::from(MAX_QUANTITY),
-            Decimal::from(MAX_UNIT_PRICE_ABS),
-        )
-        .unwrap();
-        assert_eq!(max, dec!(100000000000000));
+    fn line_amount_rejects_products_too_large_for_the_column() {
+        // 兩個上限相乘 = 1e14，欄位只容得下 9,999,999,999
+        assert_eq!(
+            line_amount(
+                Decimal::from(MAX_QUANTITY),
+                Decimal::from(MAX_UNIT_PRICE_ABS)
+            ),
+            Err(MoneyError::AmountTooLarge)
+        );
+
+        // 最小的可觸達組合：數量 100 × 單價 1e8 = 1e10，只差 1 就越界
+        assert_eq!(
+            line_amount(dec!(100), Decimal::from(MAX_UNIT_PRICE_ABS)),
+            Err(MoneyError::AmountTooLarge)
+        );
+
+        // 上限之內要能通過（99 × 1e8 = 9.9e9，仍寫得進欄位）
+        assert_eq!(
+            line_amount(dec!(99), Decimal::from(MAX_UNIT_PRICE_ABS)).unwrap(),
+            dec!(9900000000)
+        );
+
+        // 折讓列的負數同樣以絕對值判斷
+        assert_eq!(
+            line_amount(dec!(100), -Decimal::from(MAX_UNIT_PRICE_ABS)),
+            Err(MoneyError::AmountTooLarge)
+        );
+    }
+
+    /// 每列都合法，加總仍可能超出欄位容量。
+    #[test]
+    fn totals_rejects_a_subtotal_too_large_for_the_column() {
+        let near_max = Decimal::from(MAX_AMOUNT);
+        assert_eq!(
+            totals(&[near_max, near_max], default_tax_rate()),
+            Err(MoneyError::TotalTooLarge)
+        );
+
+        // subtotal 剛好在上限上，但加了 5% 稅就越界
+        assert_eq!(
+            totals(&[near_max], default_tax_rate()),
+            Err(MoneyError::TotalTooLarge)
+        );
+
+        // 留足稅額空間就該通過
+        let ok = totals(&[dec!(1000000000)], default_tax_rate()).unwrap();
+        assert_eq!(ok.subtotal, dec!(1000000000));
+        assert_eq!(ok.total, dec!(1050000000));
+    }
+
+    #[test]
+    fn tax_percent_label_handles_every_scale() {
+        assert_eq!(tax_percent_label(dec!(0.05)), "5%");
+        assert_eq!(tax_percent_label(dec!(0.0500)), "5%");
+        // 舊的前端實作在這一列算出 1%
+        assert_eq!(tax_percent_label(dec!(0.1)), "10%");
+        assert_eq!(tax_percent_label(dec!(0.1000)), "10%");
+        assert_eq!(tax_percent_label(dec!(0.0725)), "7.25%");
+        assert_eq!(tax_percent_label(dec!(0.0025)), "0.25%");
+        assert_eq!(tax_percent_label(dec!(0)), "0%");
+        assert_eq!(tax_percent_label(dec!(1)), "100%");
+    }
+
+    #[test]
+    fn totals_rejects_too_many_lines() {
+        let many = vec![dec!(1); MAX_LINES + 1];
+        assert_eq!(
+            totals(&many, default_tax_rate()),
+            Err(MoneyError::TooManyLines)
+        );
+        let at_limit = vec![dec!(1); MAX_LINES];
+        assert!(totals(&at_limit, default_tax_rate()).is_ok());
     }
 }

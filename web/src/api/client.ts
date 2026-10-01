@@ -66,7 +66,19 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
   if (response.status === 204) return undefined as T
 
   const text = await response.text()
-  const payload: unknown = text ? JSON.parse(text) : null
+
+  // 不假設回應一定是 JSON。SPA 的靜態檔 fallback 會回 HTML、反向代理的
+  // 錯誤頁是 HTML、任何繞過 ApiError 的 middleware 可能回 text/plain。
+  // 在這裡讓 JSON.parse 直接拋，使用者看到的會是瀏覽器產的英文
+  // SyntaxError（`Unexpected token 'F'…`），而不是我們寫的訊息。
+  let payload: unknown = null
+  if (text) {
+    try {
+      payload = JSON.parse(text)
+    } catch {
+      payload = null
+    }
+  }
 
   if (!response.ok) {
     const err = (payload as { error?: { code: ErrorCode; message: string; fields?: Record<string, string> } })?.error
@@ -76,6 +88,13 @@ async function request<T>(method: Method, path: string, body?: unknown): Promise
       err?.message ?? `請求失敗（${response.status}）`,
       err?.fields,
     )
+  }
+
+  // 成功卻解不出 JSON，代表拿到的不是 API 的回應（最常見的是打錯路徑
+  // 而被 SPA fallback 接走）。讓它成為一個可讀的錯誤，而不是後續
+  // 存取 undefined 欄位時才在別處炸開。
+  if (payload === null && text) {
+    throw new ApiError(response.status, 'INTERNAL', '伺服器回應格式不正確')
   }
 
   return payload as T

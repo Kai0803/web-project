@@ -19,6 +19,12 @@ use crate::db;
 /// 讓呼叫端送金額進來，等於把進位規則交給前端，而那正是這套系統最不該外包的東西。
 #[derive(Debug, Clone)]
 pub struct LineInput {
+    /// 這一列來自哪個既有明細。新增的列為 `None`。
+    ///
+    /// 用途是讓伺服器承接呼叫端無權限檢視的欄位（目前是成本）。
+    /// 不以陣列位置或 `line_no` 為依據：那兩者都隨使用者刪除、插入、
+    /// 調整順序而指向別的列。
+    pub source_id: Option<acms_domain::QuotationItemId>,
     pub name: String,
     pub spec: Option<String>,
     pub unit: String,
@@ -43,32 +49,53 @@ pub struct QuotationDetail {
 /// 反向也一樣：沒有權限看成本的人不該能寫入假成本去影響毛利判斷。
 ///
 /// 因此成本的去向由伺服器決定：有權限者照送來的值寫，無權限者
-/// 一律改用資料庫既有的值（依 `line_no` 對應），新建時則為空。
+/// 一律改用來源列在資料庫中的既有值，新建時則為空。
+///
+/// 承接的依據是**來源明細的 id**，不是 `line_no`。`line_no` 是依送來的
+/// 陣列位置重新編號的，使用者刪掉中間一列、插入一列或調整順序時，
+/// 位置就不再對應原本那一列；依 `line_no` 承接會把 A 的成本接到 B 上，
+/// 而且是靜默的——操作的人看不到成本，不可能發現接錯，有權限的人
+/// 下次打開看到的是一組合法但錯誤的數字。
+///
+/// `items` 與 `lines` 由 `price_lines` 逐列產生，索引必然對齊。
 fn apply_cost_policy(
     items: &mut [NewQuotationItem],
+    lines: &[LineInput],
     existing: &[QuotationItem],
     actor_can_write_cost: bool,
 ) {
     if actor_can_write_cost {
         return;
     }
-    for item in items {
-        item.unit_cost = existing
-            .iter()
-            .find(|e| e.line_no == item.line_no)
+    debug_assert_eq!(items.len(), lines.len(), "items 由 lines 逐列產生");
+
+    for (item, line) in items.iter_mut().zip(lines) {
+        // 找不到來源就是沒有成本：新增的列，或 id 不屬於這張報價單。
+        // 查詢範圍限定在 existing，所以送別張單的 id 也取不到值。
+        item.unit_cost = line
+            .source_id
+            .and_then(|id| existing.iter().find(|e| e.id == id))
             .and_then(|e| e.unit_cost);
     }
 }
 
 /// 將使用者輸入轉為可寫入的明細，逐列計算金額並編號。
 fn price_lines(lines: &[LineInput]) -> Result<Vec<NewQuotationItem>> {
+    // 先擋列數，再逐列計算——錯誤訊息才會指向真正的原因
+    if lines.len() > money::MAX_LINES {
+        return Err(ServiceError::Money(money::MoneyError::TooManyLines));
+    }
     lines
         .iter()
         .enumerate()
         .map(|(index, line)| {
             let amount = money::line_amount(line.quantity, line.unit_price)?;
             Ok(NewQuotationItem {
-                line_no: i32::try_from(index + 1).unwrap_or(i32::MAX),
+                // MAX_LINES 已擋在上面，所以這個轉換不可能失敗。
+                // 用 unwrap_or(i32::MAX) 會產生重複的 line_no 並撞上
+                // UNIQUE (quotation_id, line_no)，把一個不可能的狀況
+                // 變成一個難查的 500。
+                line_no: i32::try_from(index + 1).expect("列數已由 MAX_LINES 限制"),
                 name: line.name.clone(),
                 spec: line.spec.clone(),
                 unit: line.unit.clone(),
@@ -99,6 +126,7 @@ pub async fn create(
     // 新建時沒有既有成本可承接，無權限者送來的值直接歸零
     apply_cost_policy(
         &mut items,
+        lines,
         &[],
         acms_domain::authz::can_view_cost(&actor.permissions),
     );
@@ -185,6 +213,7 @@ pub async fn replace_items(
     let existing = db::quotation::items(&mut *tx, id).await?;
     apply_cost_policy(
         &mut new_items,
+        lines,
         &existing,
         acms_domain::authz::can_view_cost(&actor.permissions),
     );
@@ -278,7 +307,15 @@ async fn transition(
 }
 
 /// 送審。草稿 → 送審中。
+///
+/// 要求至少一列明細。空白報價單是刻意允許的起始狀態（前端先建立、再加明細），
+/// 但送審代表要給客戶看，而核准之後明細就不可再改、可直接轉成金額為 0 的合約，
+/// 還會把專案狀態推進到「已簽約」。
 pub async fn submit(pool: &PgPool, actor: &User, id: QuotationId) -> Result<Quotation> {
+    actor.permissions.require(Permission::QuotationWrite)?;
+    if db::quotation::items(pool, id).await?.is_empty() {
+        return Err(ServiceError::EmptyQuotation);
+    }
     transition(
         pool,
         actor,
@@ -351,8 +388,10 @@ pub async fn new_version(
             entity: "報價單"
         })?;
 
-    // 已轉合約的版本不該再被取代，否則合約會指向一份「已被取代」的報價
-    if db::contract::find_by_quotation(&mut *tx, source)
+    // 已轉合約的版本不該再被取代，否則合約會指向一份「已被取代」的報價。
+    // 範圍是整個 quote_no，與下方 supersede_other_versions 的範圍一致——
+    // 只檢查來源版本的話，從一個舊版改版會把已簽約的手足版本標成 superseded。
+    if db::contract::find_by_quote_no(&mut *tx, &src.quote_no)
         .await?
         .is_some()
     {
@@ -362,6 +401,13 @@ pub async fn new_version(
     let latest = db::quotation::latest_version(&mut *tx, &src.quote_no)
         .await?
         .unwrap_or(src.version);
+
+    // 只允許從最新版本改版。從舊版改版會把較新的版本一併標成 superseded，
+    // 而操作者畫面上看的是舊版的內容——他取代掉的是自己沒看到的那一版。
+    if src.version != latest {
+        return Err(ServiceError::NotLatestVersion { latest });
+    }
+
     let next = rules::next_version(latest)?;
 
     let created = db::quotation::insert(
@@ -376,7 +422,10 @@ pub async fn new_version(
             note: src.note.clone(),
         },
     )
-    .await?;
+    .await
+    // 兩人同時按「建立新版本」時，後到者會撞上 UNIQUE (quote_no, version)。
+    // 那是衝突，不是故障——同檔其他兩處都記得轉，這處原本漏了。
+    .map_err(ServiceError::from_db)?;
 
     // 複製來源明細。line_no 與金額原樣沿用，不重算——
     // 重算會讓新版本在來源已核准的情況下與客戶收到的數字不同。

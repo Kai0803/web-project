@@ -103,6 +103,19 @@ pub async fn latest_version(ex: impl PgExecutor<'_>, quote_no: &str) -> sqlx::Re
     .await
 }
 
+/// 某專案的報價單總數，供分頁計算頁數。
+pub async fn count_for_project(
+    ex: impl PgExecutor<'_>,
+    project_id: ProjectId,
+) -> sqlx::Result<i64> {
+    sqlx::query_scalar!(
+        r#"SELECT count(*) AS "count!" FROM quotations WHERE project_id = $1"#,
+        project_id.0,
+    )
+    .fetch_one(ex)
+    .await
+}
+
 pub async fn list_for_project(
     ex: impl PgExecutor<'_>,
     project_id: ProjectId,

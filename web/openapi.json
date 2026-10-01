@@ -278,7 +278,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/CreateCustomerRequest"
+                "$ref": "#/components/schemas/UpdateCustomerRequest"
               }
             }
           },
@@ -1338,6 +1338,14 @@
           "unit_price"
         ],
         "properties": {
+          "id": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "這一列載入時的明細 id。重寫明細時原樣送回，伺服器據此承接\n呼叫端無權限檢視的欄位（目前是成本）。新增的列不帶此欄位。\n\n不以陣列位置或 `line_no` 承接：那兩者都會隨使用者刪除、插入、\n調整順序而指向別的列，而承接錯誤的人正是看不到成本的人。"
+          },
           "name": {
             "type": "string"
           },
@@ -1562,6 +1570,7 @@
                 "version",
                 "status",
                 "tax_rate",
+                "tax_percent",
                 "subtotal",
                 "tax_amount",
                 "total",
@@ -1604,6 +1613,10 @@
                 "tax_amount": {
                   "type": "string",
                   "example": "3750"
+                },
+                "tax_percent": {
+                  "type": "string",
+                  "description": "稅率的顯示標籤，例如 `5%`。\n\n由伺服器算好而非前端自行轉換——這個轉換原本在前端有一份自己的\n實作，而它在小數位數為 1 時算錯（`0.1` 顯示成 `1%`）。\n與「金額一律由伺服器計算」同一條原則。"
                 },
                 "tax_rate": {
                   "type": "string",
@@ -1789,6 +1802,7 @@
           "version",
           "status",
           "tax_rate",
+          "tax_percent",
           "subtotal",
           "tax_amount",
           "total",
@@ -1831,6 +1845,10 @@
           "tax_amount": {
             "type": "string",
             "example": "3750"
+          },
+          "tax_percent": {
+            "type": "string",
+            "description": "稅率的顯示標籤，例如 `5%`。\n\n由伺服器算好而非前端自行轉換——這個轉換原本在前端有一份自己的\n實作，而它在小數位數為 1 時算錯（`0.1` 顯示成 `1%`）。\n與「金額一律由伺服器計算」同一條原則。"
           },
           "tax_rate": {
             "type": "string",
@@ -1893,6 +1911,43 @@
             }
           }
         }
+      },
+      "UpdateCustomerRequest": {
+        "type": "object",
+        "description": "客戶的部分更新。\n\n欄位缺席與明確給 `null` 是兩件事：缺席代表不動，`null` 代表清空。\n兩者若都收斂成 `None`，`PATCH {\"name\":\"新名字\"}` 會把統編、電話、\n地址、備註一併寫成 NULL，而呼叫端從 200 回應裡看不出自己刪了四個欄位。\n統編遺失對這個業務是實質損害——報價單與發票都要用。\n\n`db::customer::CustomerPatch` 本來就是三態語意，這裡只是讓 DTO\n不要把三態壓成兩態。",
+        "properties": {
+          "address": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "note": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "phone": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "tax_id": {
+            "type": [
+              "string",
+              "null"
+            ]
+          }
+        },
+        "additionalProperties": false
       },
       "UpdateUserRequest": {
         "type": "object",
