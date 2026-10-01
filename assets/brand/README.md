@@ -4,7 +4,7 @@
 
 90° 管件，銅色畫在**管口**（從端面看進去的管孔），不是沿著管身——沿著管身會讀成反光而非管件。
 
-`logo-network.svg`（方案 C，管網）保留為備案，未採用。`concepts.svg` 與 `letterhead-preview.svg` 為評選過程的比較圖，可刪。
+評選過程的比較圖與未採用的方案 C 已移除，需要時可由 git 歷史取回（commit `63438fa`）。
 
 Logo 之後要調整時，改 `logo-elbow.svg` 後同步更新 `company_profile.logo_svg`（系統設定 → 公司資料），兩處都要改。
 

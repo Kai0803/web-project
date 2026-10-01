@@ -1,9 +1,0 @@
-<!-- 方案 C：管網。石墨藍管路 + 銅色端點。
-     兩個端點可讀為「供應商 → 專案 → 客戶」，對應系統整合的三塊業務。
-     單色用途：把 #B87333 改為 #1F3A4D。 -->
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">
-  <path d="M 12 24 H 44 A 16 16 0 0 1 60 40 V 58 A 16 16 0 0 0 76 74 H 88"
-        fill="none" stroke="#1F3A4D" stroke-width="13" stroke-linecap="round" stroke-linejoin="round"/>
-  <circle cx="12" cy="24" r="7.5" fill="#B87333"/>
-  <circle cx="88" cy="74" r="7.5" fill="#B87333"/>
-</svg>
