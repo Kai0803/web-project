@@ -218,6 +218,9 @@ async fn run() -> anyhow::Result<()> {
             ServeDir::new(&config.static_dir)
                 .fallback(ServeFile::new(config.static_dir.join("index.html"))),
         )
+        // 顯式設定，不倚賴 axum 的 2 MiB 預設。報價單明細已由 MAX_LINES
+        // 限制為 500 列，512 KiB 綽綽有餘；最大的單一欄位是 64 KiB 的 logo SVG。
+        .layer(axum::extract::DefaultBodyLimit::max(512 * 1024))
         .layer(SetResponseHeaderLayer::overriding(
             header::CONTENT_SECURITY_POLICY,
             HeaderValue::from_static(CSP),

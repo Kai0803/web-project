@@ -541,7 +541,57 @@ pub async fn update_company(
         quote_terms: body.quote_terms,
     };
 
-    db::company::update(&state.pool, &profile).await?;
+    let mut tx = state.pool.begin().await?;
+    let before = db::company::get(&mut *tx).await?;
+    db::company::update(&mut *tx, &profile).await?;
+
+    // quote_terms 是逐字印在報價單上、「經貴方簽章回傳後即與合約有同等效力」
+    // 的法律文字。有人把付款條件從「訂金 30%」改成別的，系統裡要查得到
+    // 是誰改的。只記有變動的欄位。
+    let mut changes = serde_json::Map::new();
+    if before.name != profile.name {
+        changes.insert(
+            "name".into(),
+            serde_json::json!({ "from": before.name, "to": profile.name }),
+        );
+    }
+    if before.quote_terms != profile.quote_terms {
+        // 只記長度與「有變動」，不把 4 KB 的條款全文複製兩份進 audit_logs。
+        // 要全文版本歷史的話應另建 company_profile_revisions。
+        changes.insert(
+            "quote_terms".into(),
+            serde_json::json!({
+                "from_len": before.quote_terms.chars().count(),
+                "to_len": profile.quote_terms.chars().count(),
+            }),
+        );
+    }
+    if before.logo_svg != profile.logo_svg {
+        changes.insert("logo_svg".into(), serde_json::json!({ "changed": true }));
+    }
+    for (field, old, new) in [
+        ("tax_id", &before.tax_id, &profile.tax_id),
+        ("phone", &before.phone, &profile.phone),
+        ("fax", &before.fax, &profile.fax),
+        ("email", &before.email, &profile.email),
+        ("address", &before.address, &profile.address),
+    ] {
+        if old != new {
+            changes.insert(field.into(), serde_json::json!({ "from": old, "to": new }));
+        }
+    }
+
+    db::audit::record(
+        &mut *tx,
+        Some(user.id),
+        "company_profile",
+        1,
+        "update",
+        Some(serde_json::Value::Object(changes)),
+    )
+    .await?;
+    tx.commit().await?;
+
     Ok(StatusCode::NO_CONTENT)
 }
 

@@ -60,6 +60,9 @@ pub enum MoneyError {
     #[error("稅率必須介於 0 與 1 之間")]
     InvalidTaxRate,
 
+    #[error("成本絕對值超過上限 {MAX_UNIT_PRICE_ABS}")]
+    UnitCostTooLarge,
+
     #[error("列小計超過上限 {MAX_AMOUNT}，請確認數量與單價")]
     AmountTooLarge,
 
@@ -137,6 +140,17 @@ pub fn line_amount(quantity: Decimal, unit_price: Decimal) -> Result<Decimal, Mo
         return Err(MoneyError::AmountTooLarge);
     }
     Ok(amount)
+}
+
+/// 驗證成本。與單價共用上限；可為空。
+///
+/// 原本 `unit_cost` 完全沒有驗證，送一個 20 位數進來會在 INSERT 時
+/// 以 Postgres 的 22003 失敗 → 500 加一個追蹤 ID，而那是使用者輸入錯誤。
+pub fn validate_unit_cost(unit_cost: Option<Decimal>) -> Result<(), MoneyError> {
+    match unit_cost {
+        Some(c) if c.abs() > Decimal::from(MAX_UNIT_PRICE_ABS) => Err(MoneyError::UnitCostTooLarge),
+        _ => Ok(()),
+    }
 }
 
 /// 稅率的百分比標籤，例如 `0.0500` → `5%`、`0.1` → `10%`、`0.0725` → `7.25%`。

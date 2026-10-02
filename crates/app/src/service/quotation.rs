@@ -89,6 +89,7 @@ fn price_lines(lines: &[LineInput]) -> Result<Vec<NewQuotationItem>> {
         .iter()
         .enumerate()
         .map(|(index, line)| {
+            money::validate_unit_cost(line.unit_cost)?;
             let amount = money::line_amount(line.quantity, line.unit_price)?;
             Ok(NewQuotationItem {
                 // MAX_LINES 已擋在上面，所以這個轉換不可能失敗。
