@@ -57,7 +57,7 @@ G2 定案的其餘選型：
 
 進 G4 審查前先自行跑過 `cargo clippy`、`cargo test`、`tsc --noEmit`。
 
-**目前進度**：第一階段 G3（實作）完成，待進 G4 審查。產物於 `docs/`。
+**目前進度**：第一階段 G4（四關審查）完成，交付報告見 [docs/g5-delivery-report.md](docs/g5-delivery-report.md)。判定為有條件交付，條件與未解風險列在報告第 7、9 節。
 
 ## `.claude/` 的同步注意事項
 
