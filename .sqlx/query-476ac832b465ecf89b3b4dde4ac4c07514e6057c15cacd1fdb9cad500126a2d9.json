@@ -1,6 +1,6 @@
 {
   "db_name": "PostgreSQL",
-  "query": "\n        SELECT p.id, p.public_id, p.code, p.customer_id, p.name, p.site_address,\n               p.status::text AS \"status!\", p.manager_id, p.expected_start, p.expected_end,\n               p.note, p.created_at, p.updated_at,\n               c.name AS customer_name\n        FROM projects p\n        JOIN customers c ON c.id = p.customer_id\n        WHERE $1::text IS NULL OR p.status::text = $1\n        ORDER BY p.created_at DESC, p.id DESC\n        LIMIT $2 OFFSET $3\n        ",
+  "query": "\n        SELECT p.id, p.public_id, p.code, p.customer_id, p.name, p.site_address,\n               p.status::text AS \"status!\", p.manager_id, p.expected_start, p.expected_end,\n               p.note, p.created_at, p.updated_at,\n               c.name AS customer_name\n        FROM projects p\n        JOIN customers c ON c.id = p.customer_id\n        WHERE $1::text IS NULL OR p.status = ($1::text)::project_status\n        ORDER BY p.created_at DESC, p.id DESC\n        LIMIT $2 OFFSET $3\n        ",
   "describe": {
     "columns": [
       {
@@ -98,5 +98,5 @@
       false
     ]
   },
-  "hash": "3caa9e7fd333b6554d8dbc6d45c153e5a714f1ab44e8b61e254e61eabcbc2381"
+  "hash": "476ac832b465ecf89b3b4dde4ac4c07514e6057c15cacd1fdb9cad500126a2d9"
 }

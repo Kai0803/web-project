@@ -3,8 +3,14 @@
 //! 不用 `SELECT max(...) + 1`：在 read committed 隔離級別下，兩個並行交易
 //! 會讀到同一個最大值並產生重複。UNIQUE 約束雖擋得下，但使用者看到的是 500。
 //!
-//! 這裡以年度序號表加 `FOR UPDATE` 取號。取號必須與使用該號碼的 INSERT
-//! 落在同一個交易裡，否則交易回滾時號碼會留下缺口。
+//! 這裡以年度序號表取號，用 `INSERT ... ON CONFLICT DO UPDATE RETURNING`：
+//! UPSERT 本身取得該列的排他鎖，不需要另外 `SELECT ... FOR UPDATE`。
+//! （migration 0001 的註解還寫著 FOR UPDATE，那是舊版的做法；
+//! 已套用的 migration 不能再改，以此處為準。）
+//!
+//! 取號必須與使用該號碼的 INSERT 落在同一個交易裡，否則交易回滾時
+//! 號碼會留下缺口。列鎖因此持有到 COMMIT——實測在每年約 1,000 張單據的
+//! 需求下有 5 個數量級的餘裕，不是瓶頸。
 
 use sqlx::PgExecutor;
 

@@ -102,6 +102,17 @@ fn optional(value: &Option<String>) -> String {
     value.clone().unwrap_or_default()
 }
 
+/// 可用的中文字型家族。
+///
+/// 由啟動流程呼叫一次以預熱快取：掃描是整個行程最慢的一次性工作，
+/// 而「FONT_DIR 設錯」目前只有在有人按下「下載 PDF」時才會被發現——
+/// 服務會正常啟動、健康檢查通過、所有畫面都能用，直到業務要印報價單
+/// 給客戶的那一刻才爆。預熱讓這個設定錯誤落在開機日誌裡。
+#[must_use]
+pub fn cjk_families() -> &'static [String] {
+    world::cjk_families()
+}
+
 /// 產生報價單 PDF。
 ///
 /// 排版是 CPU 密集工作，呼叫端應以 `spawn_blocking` 執行，

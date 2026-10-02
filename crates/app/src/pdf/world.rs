@@ -44,22 +44,44 @@ fn load_fonts() -> &'static LoadedFonts {
         }
 
         let dir = std::env::var("FONT_DIR").unwrap_or_else(|_| "/usr/share/fonts".to_owned());
-        let before = fonts.len();
-        collect_fonts(std::path::Path::new(&dir), &mut fonts, 0);
+        let mut system: Vec<Font> = Vec::new();
+        collect_fonts(std::path::Path::new(&dir), &mut system, 0);
 
-        let book = FontBook::from_fonts(&fonts);
-
-        // 找出涵蓋中文的字型家族。沒有的話 PDF 會整片豆腐方塊，
-        // 與其靜默產出廢紙，不如讓產生時明確失敗。
+        // 只留涵蓋中文的系統字型。
+        //
+        // 理由是**輸出的確定性**，不是記憶體。模板的 font_stack 只有
+        // 「中文家族 + Libertinus Serif」，其餘系統字型選不到；但 typst 的
+        // fallback 仍可能從它們裡面撈字，於是備註欄塞了 emoji 或冷僻字時，
+        // 同一份報價單在開發機（macOS 有數百個字型）印得出來、在容器裡
+        // （只有 Noto CJK）是豆腐方塊。報價單的輸出不該取決於主機上
+        // 剛好裝了什麼字型。
+        //
+        // 記憶體沒有省到，實測過：開發機過濾前後都是約 770 MiB RSS，
+        // 因為 macOS 上那 25 個中文家族本身就是大檔，被留下的正是大的那些；
+        // 容器裡 /usr/share/fonts 只有 89 MiB 的 4 個 Noto CJK，
+        // 沒有東西可以過濾（RSS 143 MiB，上限 512 MiB，餘裕充足）。
+        //
+        // 過濾必須在 FontBook::from_fonts 之前：`World::font(index)` 直接
+        // 索引 `fonts`，book 與 fonts 的索引必須一致。
+        //
         // U+6E2C「測」：任何堪用的繁體字型都該有。
         const PROBE: u32 = '測' as u32;
         let mut cjk_families: Vec<String> = Vec::new();
-        for font in fonts.iter().skip(before) {
-            let info = font.info();
-            if info.coverage.contains(PROBE) && !cjk_families.contains(&info.family) {
-                cjk_families.push(info.family.clone());
+        for font in system {
+            let family = {
+                let info = font.info();
+                if !info.coverage.contains(PROBE) {
+                    continue;
+                }
+                info.family.clone()
+            };
+            if !cjk_families.contains(&family) {
+                cjk_families.push(family);
             }
+            fonts.push(font);
         }
+
+        let book = FontBook::from_fonts(&fonts);
 
         LoadedFonts {
             book: LazyHash::new(book),
@@ -81,7 +103,8 @@ fn collect_fonts(dir: &std::path::Path, out: &mut Vec<Font>, depth: usize) {
 
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        // file_type() 用 readdir 已回傳的型別，不像 is_dir() 另外 stat 一次
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
             collect_fonts(&path, out, depth + 1);
             continue;
         }

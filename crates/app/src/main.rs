@@ -192,6 +192,17 @@ async fn run() -> anyhow::Result<()> {
         Err(err) => error!(error = %err, "清除過期 session 失敗，不影響啟動"),
     }
 
+    // 字型掃描是整個行程最慢的一次性工作，且「缺中文字型」原本只有在
+    // 有人下載 PDF 時才會發現。在這裡先跑一次：啟動慢幾秒，
+    // 換設定錯誤在開機就現形。掃描是阻塞的，所以走 blocking pool。
+    match tokio::task::spawn_blocking(|| acms_app::pdf::cjk_families().len()).await {
+        Ok(0) => {
+            error!("FONT_DIR 內找不到含中文的字型，報價單 PDF 將無法產生。請確認 FONT_DIR 設定")
+        }
+        Ok(n) => info!(cjk_families = n, "字型已載入"),
+        Err(err) => error!(error = %err, "字型載入失敗，PDF 功能將不可用"),
+    }
+
     let app = Router::new()
         .route("/healthz", get(healthz))
         .with_state(AppState { pool: pool.clone() })

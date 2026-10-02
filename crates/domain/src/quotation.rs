@@ -151,7 +151,10 @@ pub fn next_version(current: i32) -> Result<i32, QuotationError> {
     if current < 1 {
         return Err(QuotationError::InvalidVersion);
     }
-    Ok(current + 1)
+    // 業務上不可達（版本只會從 1 逐一遞增），但 release build 的 wrap
+    // 會變成一個難查的 500：負數版本違反 schema 的 CHECK (version > 0)。
+    // money.rs 全程 checked_*，這裡是整個 codebase 唯一一處裸算術。
+    current.checked_add(1).ok_or(QuotationError::InvalidVersion)
 }
 
 #[cfg(test)]

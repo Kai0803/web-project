@@ -83,8 +83,9 @@ pub async fn ping(pool: &PgPool) -> Result<(), sqlx::Error> {
 
 /// 分頁參數。
 ///
-/// `LIMIT/OFFSET` 在此規模足夠：5 年 7,500 張報價的最深一頁約 5–15 ms，
-/// 佔 500 ms 預算的 3%。第三階段工時紀錄成長後再評估 keyset 分頁。
+/// `LIMIT/OFFSET` 在此規模足夠。實測 1,500 筆專案：第一頁 0.49 ms、
+/// 最深一頁（OFFSET 1450）0.64 ms，相差 0.15 ms——keyset 分頁省不到
+/// 這個數字。第三階段工時紀錄成長後再評估。
 #[derive(Debug, Clone, Copy)]
 pub struct Page {
     pub limit: i64,

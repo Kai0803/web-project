@@ -115,7 +115,7 @@ pub async fn list(
                c.name AS customer_name
         FROM projects p
         JOIN customers c ON c.id = p.customer_id
-        WHERE $1::text IS NULL OR p.status::text = $1
+        WHERE $1::text IS NULL OR p.status = ($1::text)::project_status
         ORDER BY p.created_at DESC, p.id DESC
         LIMIT $2 OFFSET $3
         "#,
@@ -154,7 +154,7 @@ pub async fn count(ex: impl PgExecutor<'_>, status: Option<ProjectStatus>) -> sq
     sqlx::query_scalar!(
         r#"
         SELECT count(*) AS "count!" FROM projects
-        WHERE $1::text IS NULL OR status::text = $1
+        WHERE $1::text IS NULL OR status = ($1::text)::project_status
         "#,
         status.map(ProjectStatus::as_str),
     )
