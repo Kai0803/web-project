@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>個人交易平台</title>
+  <link rel="stylesheet" href="/static/style.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/dompurify/3.1.6/purify.min.js"></script>
+</head>
+<body>
+<header>
+  <div class="brand">⚡ 個人交易平台</div>
+  <nav id="tabs">
+    <button data-tab="dashboard" class="active">總覽</button>
+    <button data-tab="backtest">策略回測</button>
+    <button data-tab="bots">交易機器人</button>
+    <button data-tab="portfolio">倉位管理</button>
+    <button data-tab="accounts">交易所 API</button>
+    <button data-tab="settings">設定</button>
+  </nav>
+  <div id="ai-badge" class="badge">AI 關閉</div>
+</header>
+
+<main>
+<!-- ============ 總覽 ============ -->
+<section id="tab-dashboard" class="tab active">
+  <div class="grid kpis" id="dash-kpis"></div>
+  <div class="grid two">
+    <div class="card"><h3>總資產走勢 (USD)</h3><canvas id="dash-equity" height="140"></canvas></div>
+    <div class="card"><h3>各交易所資金</h3><div id="dash-exchanges"></div></div>
+  </div>
+  <div class="grid two">
+    <div class="card"><h3>運行中的機器人</h3><div id="dash-bots"></div></div>
+    <div class="card"><h3>最近倉位變動</h3><div id="dash-events"></div></div>
+  </div>
+</section>
+
+<!-- ============ 策略回測 ============ -->
+<section id="tab-backtest" class="tab">
+  <div class="grid side">
+    <div class="card">
+      <h3>策略</h3>
+      <div id="strategy-list" class="list"></div>
+      <button id="btn-new-strategy" class="secondary full">＋ 新增策略</button>
+    </div>
+    <div class="card">
+      <div class="row between">
+        <h3 id="editor-title">策略編輯器</h3>
+        <div class="row">
+          <button id="btn-validate" class="secondary">檢查語法</button>
+          <button id="btn-ai-strategy" class="ai">✨ AI 優化建議</button>
+          <button id="btn-save-strategy">儲存</button>
+          <button id="btn-delete-strategy" class="danger">刪除</button>
+        </div>
+      </div>
+      <div class="row">
+        <label class="grow">名稱 <input id="st-name" /></label>
+        <label class="grow">說明 <input id="st-desc" /></label>
+      </div>
+      <textarea id="st-code" spellcheck="false"></textarea>
+      <details class="help"><summary>策略撰寫說明</summary>
+<pre>class MyStrategy(Strategy):
+    params = {"fast": 10, "slow": 30}        # 可調參數（回測/機器人可覆寫）
+
+    def init(self, data):                     # 預先計算指標，data.open/high/low/close/volume/ts 為 list
+        self.fast = ta.sma(data.close, self.p.fast)
+        self.slow = ta.sma(data.close, self.p.slow)
+
+    def next(self, i, data):                  # 第 i 根 K 線收盤後呼叫
+        if ta.crossover(self.fast, self.slow, i):
+            return 1.0                        # 目標曝險：1=全倉做多、0=空手、-1=全倉做空（僅永續）
+        if ta.crossunder(self.fast, self.slow, i):
+            return 0.0
+        return None                           # None = 維持現有倉位
+
+可用指標: ta.sma ema rsi macd bollinger atr highest lowest stdev crossover crossunder
+可用狀態: self.position（目前曝險 -1~1）、self.entry_price（持倉均價）
+訊號在收盤產生、下一根開盤成交（回測），避免未來函數。</pre>
+      </details>
+      <div id="ai-strategy-out" class="ai-out hidden"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>回測設定</h3>
+    <div class="form-grid">
+      <label>資料來源
+        <select id="bt-source"><option value="exchange">交易所歷史資料</option><option value="csv">上傳 CSV</option><option value="synthetic">模擬資料（離線測試）</option></select>
+      </label>
+      <label>交易所 <select id="bt-exchange" class="exchange-select"></select></label>
+      <label>交易對 <input id="bt-symbol" value="BTC/USDT" /></label>
+      <label>市場 <select id="bt-market"><option value="spot">現貨</option><option value="swap">USDT 永續</option></select></label>
+      <label>週期 <select id="bt-timeframe" class="tf-select"></select></label>
+      <label>開始日期 <input id="bt-start" type="date" /></label>
+      <label>結束日期 <input id="bt-end" type="date" /></label>
+      <label>初始資金 <input id="bt-capital" type="number" value="10000" /></label>
+      <label>手續費率 <input id="bt-fee" type="number" step="0.0001" value="0.001" /></label>
+      <label>滑價 <input id="bt-slippage" type="number" step="0.0001" value="0.0005" /></label>
+      <label>槓桿（永續） <input id="bt-leverage" type="number" step="0.5" value="1" /></label>
+      <label>停損 % (0=關) <input id="bt-sl" type="number" step="0.5" value="0" /></label>
+      <label>停利 % (0=關) <input id="bt-tp" type="number" step="0.5" value="0" /></label>
+      <label class="wide">參數覆寫 (JSON) <input id="bt-params" value="{}" /></label>
+    </div>
+    <div id="csv-box" class="hidden">
+      <label>CSV（欄位: time, open, high, low, close, volume）<input type="file" id="bt-csv-file" accept=".csv,text/csv" /></label>
+    </div>
+    <div class="row">
+      <button id="btn-run-backtest">▶ 執行回測</button>
+      <label class="check"><input type="checkbox" id="bt-ai" /> 回測後請 Gemini 分析並提供改善建議</label>
+    </div>
+    <details class="help"><summary>參數最佳化（網格搜尋）</summary>
+      <div class="row">
+        <label class="grow">參數網格 (JSON) <input id="opt-grid" value='{"fast": [10, 20, 30], "slow": [50, 100, 150]}' /></label>
+        <label>排序依據 <select id="opt-sort"><option value="sharpe">Sharpe</option><option value="total_return_pct">總報酬</option><option value="calmar">Calmar</option><option value="profit_factor">獲利因子</option></select></label>
+        <button id="btn-optimize" class="secondary">執行最佳化</button>
+      </div>
+      <p class="muted">⚠ 最佳化結果容易過度擬合，請用不同日期區間（樣本外）再驗證。</p>
+      <div id="opt-out"></div>
+    </details>
+  </div>
+
+  <div id="bt-result" class="hidden">
+    <div class="grid kpis" id="bt-metrics"></div>
+    <div class="grid two">
+      <div class="card"><h3>權益曲線</h3><canvas id="bt-equity" height="160"></canvas></div>
+      <div class="card"><h3>價格與買賣點</h3><canvas id="bt-price" height="160"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="row between"><h3>AI 分析</h3><button id="btn-ai-backtest" class="ai">✨ 請 Gemini 分析此回測</button></div>
+      <div id="bt-ai-out" class="ai-out muted">尚未分析</div>
+    </div>
+    <div class="card"><h3>成交明細</h3><div id="bt-trades" class="scroll"></div></div>
+  </div>
+  <div class="card"><h3>回測紀錄</h3><div id="bt-history" class="scroll"></div></div>
+</section>
+
+<!-- ============ 交易機器人 ============ -->
+<section id="tab-bots" class="tab">
+  <div class="grid side">
+    <div class="card">
+      <h3 id="bot-form-title">新增機器人</h3>
+      <input type="hidden" id="bot-id" />
+      <label>名稱 <input id="bot-name" value="BTC 均線" /></label>
+      <label>策略 <select id="bot-strategy" class="strategy-select"></select></label>
+      <label>模式
+        <select id="bot-mode"><option value="paper">模擬交易（不下真單）</option><option value="live">實盤交易</option></select>
+      </label>
+      <label>交易所 <select id="bot-exchange" class="exchange-select"></select></label>
+      <label>API 帳戶 <select id="bot-account" class="account-select"></select></label>
+      <div class="row">
+        <label class="grow">交易對 <input id="bot-symbol" value="BTC/USDT" /></label>
+        <label>市場 <select id="bot-market"><option value="spot">現貨</option><option value="swap">USDT 永續</option></select></label>
+      </div>
+      <div class="row">
+        <label class="grow">週期 <select id="bot-timeframe" class="tf-select"></select></label>
+        <label class="grow">分配資金 (USDT) <input id="bot-capital" type="number" value="1000" /></label>
+      </div>
+      <div class="row">
+        <label class="grow">槓桿 <input id="bot-leverage" type="number" value="1" step="1" /></label>
+        <label class="grow">最大回撤停止 <input id="bot-maxdd" type="number" value="0.3" step="0.05" /></label>
+      </div>
+      <label>參數覆寫 (JSON) <input id="bot-params" value="{}" /></label>
+      <label class="check"><input type="checkbox" id="bot-ai-guard" /> AI 守門：每次下單前由 Gemini 審核（可否決）</label>
+      <div class="row">
+        <button id="btn-save-bot">儲存</button>
+        <button id="btn-clear-bot" class="secondary">清空</button>
+      </div>
+      <p class="muted">建議流程：回測 → 模擬交易觀察 → 交易所測試網 → 小資金實盤。</p>
+    </div>
+    <div>
+      <div id="bot-list"></div>
+    </div>
+  </div>
+  <div class="grid two">
+    <div class="card"><div class="row between"><h3 id="bot-log-title">機器人日誌</h3><button id="btn-ai-bot" class="ai">✨ AI 檢討表現</button></div>
+      <div id="bot-ai-out" class="ai-out hidden"></div>
+      <div id="bot-logs" class="scroll log"></div></div>
+    <div class="card"><h3>成交紀錄</h3><div id="bot-trades" class="scroll"></div></div>
+  </div>
+  <div class="card">
+    <h3>手動下單</h3>
+    <div class="form-grid">
+      <label>API 帳戶 <select id="ord-account" class="account-select"></select></label>
+      <label>交易對 <input id="ord-symbol" value="BTC/USDT" /></label>
+      <label>市場 <select id="ord-market"><option value="spot">現貨</option><option value="swap">USDT 永續</option></select></label>
+      <label>方向 <select id="ord-side"><option value="buy">買入 / 做多</option><option value="sell">賣出 / 做空</option></select></label>
+      <label>類型 <select id="ord-type"><option value="market">市價</option><option value="limit">限價</option></select></label>
+      <label>數量（幣） <input id="ord-qty" type="number" step="any" /></label>
+      <label>限價 <input id="ord-price" type="number" step="any" /></label>
+      <label class="check"><input type="checkbox" id="ord-reduce" /> 只減倉</label>
+    </div>
+    <button id="btn-order" class="danger">送出真實訂單</button>
+  </div>
+</section>
+
+<!-- ============ 倉位管理 ============ -->
+<section id="tab-portfolio" class="tab">
+  <div class="row between">
+    <div class="row"><button id="btn-snapshot">↻ 立即同步各交易所</button><span class="muted" id="snap-status"></span></div>
+    <button id="btn-ai-portfolio" class="ai">✨ AI 資產配置與風險分析</button>
+  </div>
+  <div id="pf-ai-out" class="ai-out card hidden"></div>
+  <div class="grid kpis" id="pf-kpis"></div>
+  <div class="grid two">
+    <div class="card"><h3>資產走勢 (USD)</h3><canvas id="pf-equity" height="150"></canvas></div>
+    <div class="card"><h3>資產分佈</h3><canvas id="pf-alloc" height="150"></canvas></div>
+  </div>
+  <div class="card"><h3>幣種彙總（跨交易所）</h3><div id="pf-assets" class="scroll"></div></div>
+  <div class="card"><h3>合約持倉</h3><div id="pf-positions" class="scroll"></div></div>
+  <div class="card"><h3>倉位 / 餘額變動歷史</h3><div id="pf-events" class="scroll"></div></div>
+</section>
+
+<!-- ============ 交易所 API ============ -->
+<section id="tab-accounts" class="tab">
+  <div class="grid side">
+    <div class="card">
+      <h3 id="acc-form-title">新增 API 帳戶</h3>
+      <input type="hidden" id="acc-id" />
+      <label>名稱 <input id="acc-name" placeholder="例如：Binance 主帳戶" /></label>
+      <label>交易所 <select id="acc-exchange" class="exchange-select"></select></label>
+      <div class="muted" id="acc-api-version"></div>
+      <label>API Key <input id="acc-key" autocomplete="off" /></label>
+      <label>API Secret <input id="acc-secret" type="password" autocomplete="new-password" placeholder="編輯時留空 = 不變更" /></label>
+      <label id="acc-pass-wrap">Passphrase <input id="acc-pass" type="password" autocomplete="new-password" placeholder="OKX / Bitget 需要" /></label>
+      <label class="check"><input type="checkbox" id="acc-testnet" /> 測試網 / 模擬盤（Binance testnet、Bybit testnet、OKX 模擬盤、Bitget 模擬盤）</label>
+      <label class="check"><input type="checkbox" id="acc-enabled" checked /> 啟用（納入倉位管理同步）</label>
+      <div class="row"><button id="btn-save-acc">儲存</button><button id="btn-clear-acc" class="secondary">清空</button></div>
+      <p class="muted">🔒 金鑰以 Fernet 加密存放於本機資料庫。建議 API 只開「讀取 + 交易」，<b>不要開提幣</b>，並綁定 IP 白名單。</p>
+    </div>
+    <div class="card"><h3>已連接帳戶</h3><div id="acc-list"></div></div>
+  </div>
+</section>
+
+<!-- ============ 設定 ============ -->
+<section id="tab-settings" class="tab">
+  <div class="card narrow">
+    <h3>Gemini AI</h3>
+    <label class="check"><input type="checkbox" id="set-ai-enabled" /> 啟用 Gemini AI（總開關）</label>
+    <div class="indent">
+      <label class="check"><input type="checkbox" id="set-ai-backtest" /> 策略回測：策略審查、回測分析與改善建議</label>
+      <label class="check"><input type="checkbox" id="set-ai-trading" /> 交易平台：機器人表現檢討、AI 守門</label>
+      <label class="check"><input type="checkbox" id="set-ai-portfolio" /> 倉位管理：資產配置與風險分析</label>
+    </div>
+    <label>Gemini API Key <input id="set-key" type="password" autocomplete="off" placeholder="從 Google AI Studio 取得" /></label>
+    <label>模型 <input id="set-model" list="model-list" /></label>
+    <datalist id="model-list">
+      <option value="gemini-flash-latest"></option>
+      <option value="gemini-pro-latest"></option>
+      <option value="gemini-3.5-flash"></option>
+      <option value="gemini-2.5-pro"></option>
+      <option value="gemini-2.5-flash"></option>
+    </datalist>
+    <label>回覆語言 <input id="set-lang" /></label>
+    <div class="row"><button id="btn-save-settings">儲存</button><button id="btn-test-ai" class="secondary">測試連線</button></div>
+    <div id="set-msg" class="muted"></div>
+  </div>
+</section>
+</main>
+
+<div id="toast"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
